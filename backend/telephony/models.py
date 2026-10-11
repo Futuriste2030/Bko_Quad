@@ -1,5 +1,6 @@
-"""Journal d'appels minimal — tranche 1. Importé, jamais modifié (voir CLAUDE.md)."""
+"""Journal d'appels + anomalies persistantes + clôture du jour."""
 
+from django.conf import settings
 from django.db import models
 
 
@@ -24,3 +25,45 @@ class CallLog(models.Model):
 
     def __str__(self):
         return f"{self.phone_number} {self.started_at:%d/%m/%Y %H:%M}"
+
+
+class CallAnomaly(models.Model):
+    STATUS_CHOICES = [("open", "À justifier"), ("resolved", "Justifiée")]
+    REASON_CHOICES = [
+        ("renseignement", "Renseignement"),
+        ("annulation", "Annulation"),
+        ("faux_numero", "Faux numéro"),
+        ("autre", "Autre"),
+    ]
+
+    call = models.OneToOneField(CallLog, on_delete=models.PROTECT, related_name="anomaly")
+    status = models.CharField(max_length=10, choices=STATUS_CHOICES, default="open")
+    reason = models.CharField(max_length=20, choices=REASON_CHOICES, blank=True, default="")
+    comment = models.CharField(max_length=200, blank=True, default="")
+    resolved_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL, null=True, blank=True, on_delete=models.SET_NULL, related_name="anomalies"
+    )
+    resolved_at = models.DateTimeField(null=True, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    def __str__(self):
+        return f"Anomalie {self.call.phone_number} ({self.status})"
+
+
+class DailyClosing(models.Model):
+    date = models.DateField()
+    bookings_count = models.PositiveIntegerField(default=0)
+    amount_collected = models.PositiveIntegerField(default=0, help_text="FCFA, entier")
+    calls_count = models.PositiveIntegerField(default=0)
+    anomalies_open = models.PositiveIntegerField(default=0)
+    validated_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL, null=True, blank=True, on_delete=models.SET_NULL, related_name="closings"
+    )
+    validated_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ["-date"]
+        constraints = [models.UniqueConstraint(fields=["date"], name="uniq_closing_per_date")]
+
+    def __str__(self):
+        return f"Clôture {self.date:%d/%m/%Y}"
