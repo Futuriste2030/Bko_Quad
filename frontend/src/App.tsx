@@ -2,6 +2,9 @@ import { useState } from 'react';
 import { BrowserRouter, Route, Routes, useNavigate } from 'react-router-dom';
 import BottomTabs from './components/BottomTabs';
 import { login } from './lib/api';
+import Calls from './screens/Calls';
+import Calendar from './screens/Calendar';
+import Closing from './screens/Closing';
 import Home from './screens/Home';
 import NewBooking from './screens/NewBooking';
 import Placeholder from './screens/Placeholder';
@@ -53,10 +56,11 @@ export default function App() {
         <Routes>
           <Route path="/connexion" element={<Login />} />
           <Route path="/" element={<Home />} />
-          <Route path="/calendrier" element={<Placeholder title="Calendrier" text="La grille des créneaux arrive à la prochaine tranche." />} />
+          <Route path="/calendrier" element={<Calendar />} />
           <Route path="/reservations" element={<Reservations />} />
           <Route path="/reservations/nouvelle" element={<NewBooking />} />
-          <Route path="/appels" element={<Placeholder title="Appels à traiter" text="Le journal d’appels arrive à la prochaine tranche." />} />
+          <Route path="/appels" element={<Calls />} />
+          <Route path="/cloture" element={<Closing />} />
           <Route path="/plus" element={<Placeholder title="Plus" text="Caisse, paie, rapports et paramètres selon votre rôle." />} />
         </Routes>
         <BottomTabs />

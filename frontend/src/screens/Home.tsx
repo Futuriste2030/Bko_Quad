@@ -11,6 +11,7 @@ export default function Home() {
       <section className="card">
         <h2>Appels à traiter</h2>
         <p>Aucun appel en attente pour le moment.</p>
+        <Link to="/cloture"><button className="btn btn-primary">Clôture du jour</button></Link>
       </section>
     </div>
   );
