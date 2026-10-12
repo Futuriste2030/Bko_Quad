@@ -1,4 +1,26 @@
-/* Jetons BKO Quad — BKO_QUAD_STYLE_GUIDE.md section 2. */
+/* Jetons BKO Quad — BKO_QUAD_STYLE_GUIDE.md sections 2 et 11.
+   Thème « machine à écrire » : Courier Prime auto-hébergée, papier et encre.
+   Thème clair par défaut, sombre via [data-theme="dark"] ou système.
+   Un seul accent orange par écran (ruban). */
+
+/* Police à chasse fixe, sous-ensemble latin, font-display: swap. */
+@font-face {
+  font-family: 'Courier Prime';
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+  src: url('/fonts/courier-prime-latin-400.woff2') format('woff2');
+  unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
+}
+@font-face {
+  font-family: 'Courier Prime';
+  font-style: normal;
+  font-weight: 700;
+  font-display: swap;
+  src: url('/fonts/courier-prime-latin-700.woff2') format('woff2');
+  unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
+}
+
 :root {
   --bko-black: #0a0a0a;
   --bko-white: #ffffff;
@@ -7,14 +29,17 @@
   --bko-grey-600: #5c5c5c;
   --bko-orange: #e8590c;
 
+  /* Thème clair : papier sable, feuilles blanc cassé, encre noire */
   --bg: var(--bko-sand);
-  --surface: var(--bko-white);
+  --bg-subtle: #efebe3;
+  --surface: #faf8f2;
   --surface-2: var(--bko-sand-2);
   --ink: var(--bko-black);
   --ink-muted: var(--bko-grey-600);
   --border: #d9d4cb;
   --border-strong: var(--bko-black);
   --accent: var(--bko-orange);
+  --accent-ink: #0a0a0a;
   --focus: var(--bko-orange);
 
   --success: #17703d;
@@ -33,36 +58,108 @@
   --space-1: 4px; --space-2: 8px; --space-3: 12px; --space-4: 16px;
   --space-5: 20px; --space-6: 24px; --space-8: 32px; --space-10: 40px;
 
-  --font-body: system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+  /* Machine à écrire : une seule chasse fixe, secours Courier New. */
+  --font-body: 'Courier Prime', 'Courier New', monospace;
+  --leading: 1.6;
   --text-sm: 0.875rem;
   --text-base: 1rem;
   --text-lg: 1.125rem;
   --text-xl: 1.25rem;
   --text-2xl: 1.5rem;
+  --text-3xl: 1.875rem;
   --touch-min: 48px;
+
+  /* Coquille */
+  --sidebar-w: 248px;
+  --topbar-h: 60px;
+  --content-max: 1120px;
+
+  /* Mouvement : fluide, sobre */
+  --ease: cubic-bezier(0.2, 0.7, 0.3, 1);
+  --dur-1: 150ms;
+  --dur-2: 220ms;
+  /* Frappe unique de l'écran de connexion (≤ 1,2 s, §11). */
+  --dur-type: 1.2s;
+
+  /* Curseur bloc et tampons (§11). */
+  --caret: var(--ink);
+  --stamp-border: 3px;
+  --stamp-tilt: -2deg;
+
+  /* Graphiques : tons sobres, un seul accent */
+  --chart-grid: var(--border);
+  --chart-ink: var(--ink);
+  --chart-muted: var(--ink-muted);
+  --chart-bar: var(--ink);
+  --chart-area: var(--ink);
 }
 
+:root[data-theme='light'] {
+  color-scheme: light;
+}
+
+/* Thème sombre : papier noir, encre blanc cassé, mêmes contrastes. */
+:root[data-theme='dark'] {
+  color-scheme: dark;
+  --bg: #0a0a0a;
+  --bg-subtle: #101010;
+  --surface: #161616;
+  --surface-2: #222222;
+  --ink: #f5f3ef;
+  --ink-muted: #b5b0a6;
+  --border: #2e2e2e;
+  --border-strong: #f5f3ef;
+  --success: #4cc38a;
+  --danger: #ff6b6b;
+  --info: #6ea0ff;
+  --chart-grid: #2e2e2e;
+  --chart-bar: #f5f3ef;
+  --chart-area: #f5f3ef;
+}
+
+/* Suit le système quand aucun choix enregistré */
 @media (prefers-color-scheme: dark) {
-  :root:not([data-theme='light']) {
+  :root:not([data-theme]) {
+    color-scheme: dark;
     --bg: #0a0a0a;
+    --bg-subtle: #101010;
     --surface: #161616;
     --surface-2: #222222;
     --ink: #f5f3ef;
     --ink-muted: #b5b0a6;
-    --border: #333333;
+    --border: #2e2e2e;
     --border-strong: #f5f3ef;
     --success: #4cc38a;
     --danger: #ff6b6b;
     --info: #6ea0ff;
+    --chart-grid: #2e2e2e;
+    --chart-bar: #f5f3ef;
+    --chart-area: #f5f3ef;
   }
 }
 
 * { box-sizing: border-box; }
+
+html { -webkit-text-size-adjust: 100%; }
+
 body {
   margin: 0;
   background: var(--bg);
   color: var(--ink);
   font-family: var(--font-body);
   font-size: var(--text-base);
+  line-height: var(--leading);
+  transition: background var(--dur-1) var(--ease), color var(--dur-1) var(--ease);
 }
+
+/* Chasse fixe : chiffres tabulaires par construction. */
 .num { font-variant-numeric: tabular-nums; }
+
+::selection { background: var(--accent); color: #000; }
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0ms !important;
+    transition-duration: 0ms !important;
+  }
+}

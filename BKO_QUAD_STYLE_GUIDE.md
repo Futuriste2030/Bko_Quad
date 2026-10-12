@@ -2,6 +2,7 @@
 
 > Fichier de référence pour toute interface du Hub BKO Quad (PWA agence, puis app client).
 > Toute modification d'écran ou de composant doit respecter ces règles. En cas de doute, ce fichier prime sur les habitudes du Hub Digi Com : la structure (layout, rôles, composants) peut être réutilisée, mais l'habillage (couleurs, polices, logo) est celui de BKO Quad.
+> Thème « machine à écrire » (§11) : il remplace la typographie (§3) et l'ambiance (§4) précédentes. Couleurs, contraste, accessibilité, mobile et formats (§2, §6, §7, §8) sont inchangés.
 
 ---
 
@@ -55,7 +56,7 @@ Le logo n'impose aucune couleur : l'**orange** ci-dessous est une proposition d'
 
   /* Rôles (thème clair) */
   --bg: var(--bko-sand);              /* fond de page */
-  --surface: var(--bko-white);        /* cartes, champs, feuilles */
+  --surface: #faf8f2;                  /* blanc cassé : feuilles, cartes, champs */
   --surface-2: var(--bko-sand-2);     /* zones secondaires, lignes de tableau alternées */
   --ink: var(--bko-black);            /* texte principal, bordures fortes */
   --ink-muted: var(--bko-grey-600);   /* texte secondaire */
@@ -151,29 +152,26 @@ Règle d'or : **l'orange est rare**. Un seul élément orange fort par écran (l
 | Expirée | `--ink-muted` | Contour gris pointillé |
 | Anomalie (appel ou client sans réservation) | `--danger` | Fond rouge, texte blanc, remonte en tête des listes |
 
-Un statut n'est **jamais indiqué par la couleur seule** : toujours le texte, et une icône si la place le permet.
+Un statut n'est **jamais indiqué par la couleur seule** : toujours le texte, et une icône si la place le permet. Forme en tampon rectangulaire : voir §11.
 
 ---
 
-## 3. Typographie
+## 3. Typographie — machine à écrire (détaillée en §11)
+
+> Cette section remplace l'ancienne typographie (Caprasimo supprimée).
 
 | Usage | Police | Taille | Graisse |
 | --- | --- | --- | --- |
-| Titre de marque (écran de connexion, en-tête de documents) | `--font-display` (Caprasimo) | `--text-3xl` | 400 (une seule graisse existe) |
-| Titres d'écran (H1) | `--font-body` | `--text-2xl` | 700 |
-| Titres de section (H2, H3) | `--font-body` | `--text-xl`, `--text-lg` | 700, 600 |
-| Texte courant | `--font-body` | `--text-base` | 400 |
-| Libellés de champ, légendes | `--font-body` | `--text-sm` | 500 |
-| Montants et chiffres de tableau de bord | `--font-body` | selon le contexte | 700 |
+| Tout le texte, titres compris | Chasse fixe `--font-body` (Courier Prime) | `--text-*` | 400, 700 |
+| Logo uniquement | Lettres rondes du logo | — | — |
 
 Règles :
 
-- La police d'affichage ressemble à une lettre ronde et grasse proche de celle du logo ; la vérifier visuellement à côté du logo avant de la généraliser. Elle ne sert que pour 1 à 2 occurrences par écran, jamais pour du texte courant ni des boutons.
-- Le texte courant utilise la **pile système** : zéro octet à télécharger, rapide sur Android d'entrée de gamme et réseau lent.
-- Si Caprasimo est utilisée : auto-hébergée, sous-ensemble latin, `font-display: swap`.
-- Les montants et heures utilisent `font-variant-numeric: tabular-nums` pour s'aligner en colonne.
-- Pas de texte en majuscules sauf sigles (FCFA, QR) et le mot-symbole « BKO QUAD ».
-- Longueur de ligne maximale : 70 caractères.
+- Une seule famille : Courier Prime, auto-hébergée (`public/fonts/`, woff2, sous-ensemble latin, graisses 400 et 700), `font-display: swap`, pile de secours `'Courier New', monospace`.
+- Caprasimo est supprimée : le logo reste le seul élément en lettres rondes, ce qui le met en valeur.
+- Chasse fixe partout : chiffres tabulaires par construction, montants et heures alignés sans utilitaire.
+- Champs de formulaire : 16 px minimum. Texte courant jamais en majuscules ; majuscules réservées aux titres d'écran (H1), aux sigles (FCFA, QR) et aux en-têtes de colonnes.
+- Interlignage `--leading` (1,6). Longueur de ligne maximale : 70 caractères.
 
 ---
 
@@ -189,6 +187,7 @@ Règles :
 - Ailleurs : pas d'ombre floue, pas de dégradé, pas de transparence décorative. Un écran avec plus de trois ombres dures est trop chargé.
 - Icônes : jeu **Lucide**, trait 2 px, 24 px, couleur `--ink`. Jamais d'emoji comme icône d'interface.
 - Illustrations : style noir et blanc au trait, cohérent avec le logo.
+- Ambiance machine à écrire (touches, fiches papier, talon perforé, lignes tapées) : voir §11.
 
 ---
 
@@ -208,6 +207,7 @@ Règles :
 - Libellé = verbe à l'infinitif, concret : « Enregistrer la réservation », pas « OK ».
 - État de chargement : spinner dans le bouton, bouton désactivé, libellé conservé.
 - Focus visible : contour 3 px `--focus` avec décalage de 2 px.
+- Touches de machine (contour 2 px, ombre dure, enfoncement 2 px au toucher) : voir §11.
 
 ### Champs de formulaire
 
@@ -222,6 +222,7 @@ Règles :
 - **Mobile : les tableaux deviennent des cartes empilées** (une carte = une réservation, un appel, une écriture). Jamais de défilement horizontal pour lire une ligne.
 - **Ordinateur (responsable, direction)** : tableaux classiques à deux colonnes liste + détail.
 - Une carte de réservation montre, dans cet ordre : heure et activité, nom du client, nombre de personnes, **badge de statut**, montant restant dû.
+- Fiches papier et talon perforé du code de réservation : voir §11.
 
 ### Navigation
 
@@ -239,6 +240,7 @@ Règles :
 | Erreur | `--danger` | « Connexion perdue, réessayez » |
 
 Les anomalies de contrôle (appel sans réservation, écart de caisse) s'affichent en **bannière rouge persistante** en haut de l'accueil du responsable : elles ne disparaissent pas toutes seules.
+Chargement = curseur bloc clignotant ; états vides et erreurs = court texte tapé + curseur : voir §11.
 
 ### États vides, chargement, hors ligne
 
@@ -306,6 +308,10 @@ Vocabulaire à employer de façon constante : **réservation** (jamais « bookin
 - Tableaux qui obligent à défiler horizontalement sur mobile.
 - Libellés techniques dans les messages d'erreur (« Error 500 », « null »).
 - Écrans sans état vide, chargement ou erreur définis.
+- Une autre police que la chasse fixe du §3 (Caprasimo comprise).
+- Des spinners rotatifs (utiliser le curseur bloc du §11).
+- Du texte courant en majuscules.
+- Des images décoratives ou des textures (tout est en CSS).
 
 ---
 
@@ -319,5 +325,67 @@ Vocabulaire à employer de façon constante : **réservation** (jamais « bookin
 | `pictogramme-quad-white.svg` | Quad et pilote seuls, blanc | Thème sombre, icône maskable |
 | `icon-192.png`, `icon-512.png`, `icon-maskable-512.png` | Icônes PWA | Écran d'accueil du téléphone |
 | `favicon.svg` | Pictogramme simplifié | Onglet du navigateur |
+| `courier-prime-latin-400.woff2` | Courier Prime 400, sous-ensemble latin | `public/fonts/` — texte courant |
+| `courier-prime-latin-700.woff2` | Courier Prime 700, sous-ensemble latin | `public/fonts/` — gras, tampons, montants |
 
 L'image fournie est un JPEG sur fond blanc : la vectoriser (ou refaire un PNG transparent haute résolution) avant toute intégration pour éviter les bords flous et le fond blanc visible en thème sombre.
+
+---
+
+## 11. Thème machine à écrire — années 70 (source de vérité)
+
+> Remplace la typographie (§3, Caprasimo supprimée) et l'ambiance (§4) précédentes.
+> Couleurs, contraste, accessibilité, mobile et formats (§2, §6, §7, §8) sont inchangés.
+
+### Police
+
+- Une seule famille à chasse fixe : **Courier Prime**, graisses 400 et 700 uniquement.
+- Auto-hébergée : `public/fonts/courier-prime-latin-400.woff2` et `courier-prime-latin-700.woff2` (sous-ensemble latin, ~38 Ko au total), `font-display: swap`, pile de secours `'Courier New', monospace`.
+- Choix : Courier Prime plutôt qu'IBM Plex Mono car ses formes (empattements dalle, courbes rondes) évoquent la machine des années 70, et sa chasse fixe rend les chiffres tabulaires par construction — montants (`1 250 000 FCFA`) et heures alignés sans utilitaire.
+
+### Papier et encre
+
+- Fond de page sable (`--bg`), feuilles et cartes en blanc cassé (`--surface`), encre noire (`--ink`).
+- Pas de texture en image : tout est en CSS (filets, pointillés, ombre dure).
+- Interlignage `--leading` (1,6) : la chasse fixe respire.
+
+### Ruban rouge
+
+- L'orange du guide (`--accent`) joue le rôle du ruban bicolore : un seul élément orange fort par écran, texte noir dessus (jamais blanc sur orange).
+
+### Lignes tapées
+
+- Séparateurs en tirets (bordure en pointillés larges), jamais de filet uni épais dans le contenu.
+- Points de conduite entre libellé et montant : un espace flexible à bordure pointillée basse dans un flex (pas de caractères « … » tapés).
+- Tableaux (desktop) avec filets fins, lignes alternées `--surface-2`.
+
+### Touches (boutons)
+
+- Les boutons sont des touches de machine : contour 2 px `--border-strong`, ombre dure décalée `--shadow-hard`, hauteur 48 px minimum.
+- Au toucher : enfoncement de 2 px (`translate(2px, 2px)`, `--shadow-hard-pressed`).
+- Libellés inchangés : verbe à l'infinitif, casse naturelle (pas de majuscules forcées sur les boutons).
+
+### Fiches et talon perforé
+
+- Les cartes sont des fiches de papier (blanc cassé, contour 1 px, titre souligné en tirets).
+- Le code de réservation (`BKO-…`) se présente comme un talon détachable : bord perforé en CSS (rangée de trous ronds, sans image), à présenter au client.
+
+### Tampons de statut
+
+- Rectangulaires, contour épais `--stamp-border` (3 px), texte en gras, légèrement inclinés (`--stamp-tilt`) sur les écrans larges (≥ 1024 px), droits sur mobile pour rester lisibles.
+- Toujours le texte du statut (+ icône si la place le permet), jamais la couleur seule. Couleurs du §2 inchangées.
+
+### Chargement, vides, erreurs
+
+- Chargement : un **curseur bloc clignotant** (`--caret`, 1 s) à la place des spinners.
+- États vides et erreurs : un court texte « tapé » suivi du curseur.
+- Un seul effet d'écriture progressive, sur l'écran de connexion (accroche tapée en ≤ 1,2 s, `--dur-type`), jamais ailleurs.
+- `prefers-reduced-motion` : curseur fixe et texte complet, sans clignotement ni frappe.
+
+### Thème sombre
+
+- L'inverse : papier noir (`--bg`), feuilles gris très sombre (`--surface`), encre blanc cassé (`--ink`). Mêmes règles de contraste (4,5:1), même ruban, mêmes tampons.
+
+### Jetons ajoutés (`tokens.css`, aucune valeur en dur dans les composants)
+
+`--font-body` (Courier Prime), `--surface: #faf8f2`, `--leading: 1,6`, `--caret`, `--dur-type: 1,2 s`, `--stamp-border: 3 px`, `--stamp-tilt: -2deg`.
