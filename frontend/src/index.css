@@ -1,0 +1,26 @@
+/* Tailwind CSS v4 — thème + utilitaires seuls, SANS preflight.
+   Le design system historique (tokens.css + app.css) reste la base ;
+   Tailwind sert les écrans refondus avec des utilitaires sobres.
+   Couleurs via les variables du guide : bg-[var(--surface)], etc. */
+@import "tailwindcss/theme.css";
+@import "tailwindcss/utilities.css";
+
+/* Apparitions sobres, alignées sur les tokens --dur-* du guide. */
+@keyframes bko-rise {
+  from { opacity: 0; transform: translateY(8px); }
+  to { opacity: 1; transform: none; }
+}
+.anim-rise { animation: bko-rise 220ms cubic-bezier(0.2, 0.7, 0.3, 1) both; }
+
+/* Frappe unique de l'écran de connexion (≤ --dur-type, guide §11). */
+.typewrite {
+  display: inline-block; max-width: 0; overflow: hidden; white-space: nowrap;
+  vertical-align: bottom;
+  animation: bko-type var(--dur-type) steps(12, end) forwards;
+}
+@keyframes bko-type { to { max-width: 12ch; } }
+
+@media (prefers-reduced-motion: reduce) {
+  .anim-rise { animation: none; }
+  .typewrite { animation: none; max-width: none; }
+}

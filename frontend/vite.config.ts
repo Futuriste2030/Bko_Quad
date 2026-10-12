@@ -1,12 +1,23 @@
 import { VitePWA } from 'vite-plugin-pwa';
+import tailwindcss from '@tailwindcss/vite';
 import react from '@vitejs/plugin-react';
 import { defineConfig } from 'vite';
 
 export default defineConfig({
   plugins: [
     react(),
+    tailwindcss(),
     VitePWA({
       registerType: 'autoUpdate',
+      // Jamais de SW en dev : le cache applicatif ne concerne que la prod.
+      devOptions: { enabled: false },
+      workbox: {
+        cleanupOutdatedCaches: true,
+        // Police auto-hébergée disponible hors ligne (guide §11).
+        globPatterns: ['**/*.{js,css,html,ico,png,svg,webp,woff,woff2}'],
+        // L'API ne passe jamais par le cache du service worker.
+        navigateFallbackDenylist: [/^\/api\//],
+      },
       manifest: {
         name: 'BKO Quad Hub',
         short_name: 'BKO Hub',
