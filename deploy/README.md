@@ -24,10 +24,11 @@ Renseigner au minimum :
 
 - `DJANGO_SECRET_KEY` : `python -c "from django.core.management.utils import get_random_secret_key; print(get_random_secret_key())"`
 - `POSTGRES_PASSWORD` : `openssl rand -base64 32`
-- `BKO_WHATSAPP_BUSINESS_NUMBER`
 - `BACKUP_PASSPHRASE`
 
 `deploy/.env.production` est ignoré par Git : ne jamais le committer.
+Les liens WhatsApp utilisent le numéro du client (ou son numéro WhatsApp
+distinct) : aucun numéro Business n'est requis.
 
 ## 3. Premier démarrage
 
