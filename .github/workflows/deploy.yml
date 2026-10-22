@@ -1,6 +1,7 @@
 # BKO Quad Hub — build, push GHCR, deploy VPS over SSH.
 # Secrets GitHub requis :
 #   SSH_HOST  IP/hostname du VPS
+#   SSH_PORT  port SSH (optionnel, 22 par défaut)
 #   SSH_USER  utilisateur SSH (root ou compte avec docker)
 #   SSH_KEY   clé privée autorisée sur le VPS
 # Prérequis VPS : repo cloné dans /var/www/Bko_Quad, deploy/.env.production
@@ -58,6 +59,7 @@ jobs:
       - uses: appleboy/ssh-action@v1
         with:
           host: ${{ secrets.SSH_HOST }}
+          port: ${{ secrets.SSH_PORT || 22 }}
           username: ${{ secrets.SSH_USER }}
           key: ${{ secrets.SSH_KEY }}
           script_stop: true

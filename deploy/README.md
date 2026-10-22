@@ -87,6 +87,7 @@ l'image, la pousse sur GHCR puis se connecte au VPS en SSH à chaque push sur
 `master`. Secrets GitHub à créer :
 
 - `SSH_HOST` : IP ou nom du VPS ;
+- `SSH_PORT` : port SSH (optionnel, 22 par défaut) ;
 - `SSH_USER` : compte SSH (accès Docker) ;
 - `SSH_KEY` : clé privée autorisée sur le VPS.
 
