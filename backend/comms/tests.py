@@ -43,6 +43,30 @@ class CommsTest(TestCase):
         self.assertEqual(m.channel, "whatsapp_link")
         self.assertEqual(self.booking.messages.count(), 1)
 
+    def test_lien_utilise_le_whatsapp_du_client(self):
+        from rest_framework.test import APIClient
+
+        self.cust.whatsapp = "+223 70 00 00 01"
+        self.cust.save()
+        client = APIClient()
+        client.force_authenticate(user=self.agent)
+        r = client.post("/api/v1/messages/", {
+            "booking": self.booking.id, "text": "Bonjour"})
+        self.assertEqual(r.status_code, 201)
+        self.assertTrue(r.data["wa_me"].startswith(
+            "https://wa.me/22370000001?text="))
+
+    def test_lien_replie_sur_le_telephone(self):
+        from rest_framework.test import APIClient
+
+        client = APIClient()
+        client.force_authenticate(user=self.agent)
+        r = client.post("/api/v1/messages/", {
+            "booking": self.booking.id, "text": "Bonjour"})
+        self.assertEqual(r.status_code, 201)
+        self.assertTrue(r.data["wa_me"].startswith(
+            "https://wa.me/22378803072?text="))
+
 
 class NoticeTest(TestCase):
     def setUp(self):

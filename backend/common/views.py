@@ -562,7 +562,8 @@ class MessageViewSet(mixins.CreateModelMixin, mixins.ListModelMixin,
         if not text or booking is None:
             return Response({"detail": "Réservation et texte requis."}, status=400)
         msg = log_whatsapp(booking=booking, text=text, sent_by=request.user)
-        wa_link = wa_me_link(booking.customer.phone, text)
+        phone = booking.customer.whatsapp or booking.customer.phone
+        wa_link = wa_me_link(phone, text)
         return Response({**MessageSerializer(msg).data, "wa_me": wa_link}, status=201)
 
 
