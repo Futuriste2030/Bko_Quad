@@ -82,6 +82,14 @@ sudo ./deploy/deploy.sh
 Le script fait `git pull`, reconstruit l'image, redémarre la stack et attend
 la sonde. Les migrations sont rejouées au démarrage de `web`.
 
+Déploiement automatique : le workflow `.github/workflows/deploy.yml` construit
+l'image, la pousse sur GHCR puis se connecte au VPS en SSH à chaque push sur
+`master`. Secrets GitHub à créer :
+
+- `SSH_HOST` : IP ou nom du VPS ;
+- `SSH_USER` : compte SSH (accès Docker) ;
+- `SSH_KEY` : clé privée autorisée sur le VPS.
+
 ## 6. Sauvegardes chiffrées
 
 ```bash

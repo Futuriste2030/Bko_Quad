@@ -15,7 +15,7 @@ x-app: &app
   build:
     context: .
     dockerfile: Dockerfile
-  image: bko-quad:latest
+  image: ghcr.io/futuriste2030/bko_quad:latest
   env_file:
     - deploy/.env.production
   depends_on:
@@ -69,6 +69,8 @@ services:
   worker:
     <<: *app
     command: ["celery", "-A", "config", "worker", "-l", "info", "--concurrency=2"]
+    healthcheck:
+      disable: true
     depends_on:
       db:
         condition: service_healthy
@@ -82,6 +84,8 @@ services:
   beat:
     <<: *app
     command: ["celery", "-A", "config", "beat", "-l", "info", "--schedule=/tmp/celerybeat-schedule"]
+    healthcheck:
+      disable: true
     depends_on:
       db:
         condition: service_healthy

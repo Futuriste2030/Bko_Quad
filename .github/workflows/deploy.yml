@@ -1,0 +1,74 @@
+# BKO Quad Hub — build, push GHCR, deploy VPS over SSH.
+# Secrets GitHub requis :
+#   SSH_HOST  IP/hostname du VPS
+#   SSH_USER  utilisateur SSH (root ou compte avec docker)
+#   SSH_KEY   clé privée autorisée sur le VPS
+# Prérequis VPS : repo cloné dans /var/www/Bko_Quad, deploy/.env.production
+# présent, Docker + plugin compose installés, Nginx/TLS prêts.
+name: Build & Deploy
+
+on:
+  push:
+    branches: [master]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  packages: write
+
+concurrency:
+  group: bko-production
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: docker/setup-buildx-action@v3
+
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - uses: docker/metadata-action@v5
+        id: meta
+        with:
+          images: ghcr.io/futuriste2030/bko_quad
+          tags: |
+            type=raw,value=latest
+            type=sha,format=short
+
+      - uses: docker/build-push-action@v6
+        with:
+          context: .
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: appleboy/ssh-action@v1
+        with:
+          host: ${{ secrets.SSH_HOST }}
+          username: ${{ secrets.SSH_USER }}
+          key: ${{ secrets.SSH_KEY }}
+          script_stop: true
+          command_timeout: 15m
+          script: |
+            set -euo pipefail
+            cd /var/www/Bko_Quad
+            git pull --ff-only origin master
+            echo "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io -u "${{ github.actor }}" --password-stdin
+            docker compose -f docker-compose.prod.yml --env-file deploy/.env.production pull
+            docker compose -f docker-compose.prod.yml --env-file deploy/.env.production up -d --remove-orphans --wait --wait-timeout 180
+            docker image prune -f
+            docker compose -f docker-compose.prod.yml --env-file deploy/.env.production ps
+            curl -fsS http://127.0.0.1:8003/healthz
