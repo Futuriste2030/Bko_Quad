@@ -8,7 +8,7 @@ import { useCompany } from '../lib/company';
 import { useTheme } from '../lib/theme';
 import { useToast } from '../lib/toast';
 import {
-  changePassword, createUser, getCompany, getVersion, listLines, listSites, listUsers, mediaUrl, resetUserPassword, saveCompany,
+  changePassword, createSite, createUser, getCompany, getVersion, listLines, listSites, listUsers, mediaUrl, resetUserPassword, saveCompany,
   toggleCollect, toggleUserActive, totpEnroll, totpVerify, type AdminUser, type Site, type TrackedLine,
 } from '../lib/api';
 import { currentPerm, setNotifyEnabled, useNotifyEnabled, type NotifPerm } from '../lib/notifpref';
@@ -28,10 +28,13 @@ export default function Settings() {
   const { user, can, refresh: refreshMe } = useAuth();
   const { refresh } = useCompany();
   const mayManageUsers = user?.is_superuser === true || user?.role === 'superadmin';
+  const mayManageSites = can('admin');
   const mayCollect = can('responsable', 'admin');
   const [lines, setLines] = useState<TrackedLine[]>([]);
   const [users, setUsers] = useState<AdminUser[]>([]);
   const [sites, setSites] = useState<Site[]>([]);
+  const [sName, setSName] = useState('');
+  const [sCity, setSCity] = useState('Bamako');
   const [uName, setUName] = useState('');
   const [uFirst, setUFirst] = useState('');
   const [uLast, setULast] = useState('');
@@ -66,6 +69,8 @@ export default function Settings() {
   useEffect(() => {
     if (mayManageUsers) {
       listUsers().then(setUsers).catch(() => undefined);
+    }
+    if (mayManageSites) {
       listSites().then(setSites).catch(() => undefined);
     }
     getVersion().then(setVersion).catch(() => setVersion('—'));
@@ -77,7 +82,7 @@ export default function Settings() {
       setCNif(c.nif); setCRccm(c.rccm); setCCond(c.conditions); setCThanks(c.thanks); setCSign(c.signature_name);
       setStampUrl(mediaUrl(c.stamp)); setSignUrl(mediaUrl(c.signature));
     }).catch(() => undefined);
-  }, [mayManageUsers, can]);
+  }, [mayManageUsers, mayManageSites, can]);
 
   /* Coupe-circuit collecte : désactive/réactive la remontée APK par ligne,
      la synchro auto reprend seule quand c'est réactivé. */
@@ -134,6 +139,23 @@ export default function Settings() {
       setUsers((l) => [...l, u]);
       setUName(''); setUFirst(''); setULast(''); setUPhone(''); setUPass(''); setUSite('');
       setOpenU(false);
+    } catch (e) { notify('error', 'Création impossible', e instanceof Error ? e.message : ''); }
+    finally { setBusy(false); }
+  }
+
+  async function submitSite() {
+    const name = sName.trim();
+    if (!name) {
+      notify('warning', 'Nom requis', 'Saisissez le nom du site.');
+      return;
+    }
+    setBusy(true);
+    try {
+      const s = await createSite({ name, city: sCity.trim() || 'Bamako' });
+      setSites((list) => [...list, s].sort((a, b) => a.name.localeCompare(b.name)));
+      setSName('');
+      setSCity('Bamako');
+      notify('success', 'Site créé', `${s.name} — ${s.city}.`);
     } catch (e) { notify('error', 'Création impossible', e instanceof Error ? e.message : ''); }
     finally { setBusy(false); }
   }
@@ -228,7 +250,7 @@ export default function Settings() {
 
   return (
     <AppShell>
-      <PageHeader title="Paramètres" sub="Préférences, entreprise, utilisateurs (super admin) et sécurité." />
+      <PageHeader title="Paramètres" sub="Préférences, sites, entreprise, utilisateurs (super admin) et sécurité." />
       <section className="card form">
         <h2>Apparence</h2>
         <Field label="Thème de l’interface" htmlFor="set-theme" hint="Sombre recommandé en extérieur, clair au bureau.">
@@ -305,6 +327,35 @@ export default function Settings() {
             </div>
           </div>
         </div></Portal>
+      )}
+
+      {mayManageSites && (
+        <section className="card form" aria-label="Sites">
+          <h2>Sites</h2>
+          <p className="small muted">Un site regroupe les formules, créneaux, engins et utilisateurs. Créez-les avant d’ouvrir les réservations.</p>
+          <div className="form-2">
+            <Field label="Nom du site" required htmlFor="site-name">
+              <input id="site-name" value={sName} onChange={(e) => setSName(e.target.value)} placeholder="Ex. Konibabougou" autoComplete="off" />
+            </Field>
+            <Field label="Ville" htmlFor="site-city">
+              <input id="site-city" value={sCity} onChange={(e) => setSCity(e.target.value)} placeholder="Bamako" autoComplete="off" />
+            </Field>
+          </div>
+          <button type="button" className="btn btn-primary" onClick={submitSite} disabled={busy}>
+            {busy && <span className="caret" aria-hidden="true" />}Ajouter le site
+          </button>
+          <div className="list" style={{ marginTop: 12 }}>
+            {sites.map((s) => (
+              <div className="row-top" key={s.id}>
+                <span><strong>{s.name}</strong><span className="small muted"> — {s.city}</span></span>
+                <span className="small muted">Site #{s.id}</span>
+              </div>
+            ))}
+            {sites.length === 0 && (
+              <p className="small muted">Aucun site configuré. Créez le premier site : sans site, aucune réservation n’est possible.</p>
+            )}
+          </div>
+        </section>
       )}
 
       {mayManageUsers && (

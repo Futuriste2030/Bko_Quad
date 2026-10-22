@@ -1,6 +1,6 @@
 /* J : état de la file hors ligne + rejeu automatique au retour du réseau. */
 
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { flushQueue, type SyncReport } from './api';
 import { allOps, onQueueChange, type QueuedOp } from './offline';
 
@@ -15,6 +15,7 @@ export interface SyncState {
 export function useSync(): SyncState {
   const [ops, setOps] = useState<QueuedOp[]>([]);
   const [running, setRunning] = useState(false);
+  const runningRef = useRef(false);
 
   const reload = useCallback(async () => {
     try { setOps(await allOps()); } catch { setOps([]); }
@@ -26,6 +27,8 @@ export function useSync(): SyncState {
   }, [reload]);
 
   const sync = useCallback(async () => {
+    if (runningRef.current) return null;
+    runningRef.current = true;
     setRunning(true);
     try {
       const report = await flushQueue();
@@ -34,6 +37,7 @@ export function useSync(): SyncState {
     } catch {
       return null;
     } finally {
+      runningRef.current = false;
       setRunning(false);
     }
   }, [reload]);
@@ -47,18 +51,28 @@ export function useSync(): SyncState {
   };
 }
 
-/* Rejeu automatique : au retour du réseau, puis toutes les minutes tant que
-   la file n'est pas vide (le téléphone peut rester en veille). */
+/* Rejeu automatique : dès qu'une saisie en attente apparaît, au retour du
+   réseau, au retour au premier plan, puis toutes les minutes (le téléphone
+   peut rester en veille). Aucun bouton n'est nécessaire. */
 export function SyncWatcher() {
   const { pending, sync } = useSync();
 
   useEffect(() => {
-    const on = () => { void sync(); };
-    window.addEventListener('online', on);
-    const id = window.setInterval(() => {
+    const attempt = () => {
       if (pending > 0 && navigator.onLine) void sync();
-    }, 60000);
-    return () => { window.removeEventListener('online', on); window.clearInterval(id); };
+    };
+    const onVisible = () => {
+      if (document.visibilityState === 'visible') attempt();
+    };
+    window.addEventListener('online', attempt);
+    document.addEventListener('visibilitychange', onVisible);
+    const id = window.setInterval(attempt, 60000);
+    attempt();
+    return () => {
+      window.removeEventListener('online', attempt);
+      document.removeEventListener('visibilitychange', onVisible);
+      window.clearInterval(id);
+    };
   }, [pending, sync]);
 
   return null;

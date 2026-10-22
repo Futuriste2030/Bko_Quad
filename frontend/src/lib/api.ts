@@ -449,6 +449,10 @@ async function postOne<T>(path: string, body: unknown): Promise<T> {
   return r.json();
 }
 
+export async function createSite(input: { name: string; city?: string }): Promise<Site> {
+  return postOne<Site>('/sites/', input);
+}
+
 export async function createSlot(input: { activity: number; start: string; end: string; capacity: number }): Promise<Slot> {
   return postOne<Slot>('/slots/', input);
 }

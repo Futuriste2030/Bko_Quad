@@ -392,6 +392,13 @@ export default function NewBooking() {
         <section className="card" aria-label="Étape 2 : créneau">
           <h2>2. Site, formule et créneau</h2>
           <p className="muted small">Client : <strong>{customer?.name}</strong> — le prix vient de la formule.</p>
+          {sites.length === 0 && (
+            <div className="banner banner-warning" role="alert">
+              <Icon name="info" size={20} />
+              <div><strong>Aucun site configuré.</strong>
+                <div className="small">Un administrateur doit créer les sites dans Paramètres → Sites avant toute réservation.</div></div>
+            </div>
+          )}
           <div className="form-2">
             <Field label="Site de réservation" required htmlFor="nb-site">
               <select id="nb-site" value={siteId} onChange={(e) => { setSiteId(e.target.value); setSlotId(null); setFormuleId(''); setCustomSlot(false); }}>
