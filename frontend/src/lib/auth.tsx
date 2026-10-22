@@ -58,12 +58,16 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const refresh = useCallback(async () => {
     try { setUser(await fetchMe()); } catch { /* session expirée : le garde redirige */ }
   }, []);
-  const role = (user?.role as Role | undefined) ?? null;
+  /* Le compte système reste superadmin même si son champ `role` a été
+     modifié directement en base : `is_superuser` fait foi côté interface. */
+  const role: Role | null = user?.is_superuser
+    ? 'superadmin'
+    : ((user?.role as Role | undefined) ?? null);
   const can = useCallback((...roles: Role[]) => {
     if (!role) return false;
-    if (role === 'admin' || role === 'superadmin') return true;
+    if (user?.is_superuser || role === 'admin' || role === 'superadmin') return true;
     return roles.includes(role);
-  }, [role]);
+  }, [role, user?.is_superuser]);
 
   return <Ctx.Provider value={{ user, role, ready, login, logout, refresh, can }}>{children}</Ctx.Provider>;
 }

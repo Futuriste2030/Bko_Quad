@@ -53,7 +53,7 @@ export const NAV_SECTIONS: NavSection[] = [
     title: 'Équipe',
     items: [
       { to: '/mes-documents', label: 'Mes documents', icon: 'file', roles: ALL },
-      { to: '/rh', label: 'Contrats & courriers', icon: 'users', roles: ['responsable', 'admin'] },
+      { to: '/rh', label: 'RH', icon: 'users', roles: ['responsable', 'admin', 'superadmin'] },
     ],
   },
   {
