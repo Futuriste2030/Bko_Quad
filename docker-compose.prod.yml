@@ -56,11 +56,10 @@ services:
 
   web:
     <<: *app
-    command: >
-      sh -c "python manage.py migrate --noinput &&
-             exec gunicorn config.wsgi:application
-             --workers 3 --bind 0.0.0.0:8000 --timeout 120
-             --access-logfile - --error-logfile - --forwarded-allow-ips='*'"
+    command:
+      - sh
+      - -c
+      - "python manage.py migrate --noinput && exec gunicorn config.wsgi:application --workers 3 --bind 0.0.0.0:8000 --timeout 120 --access-logfile - --error-logfile - --forwarded-allow-ips='*'"
     volumes:
       - media_data:/app/media
     ports:
