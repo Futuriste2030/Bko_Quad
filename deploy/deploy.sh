@@ -24,8 +24,8 @@ echo "==> Démarrage / mise à jour des conteneurs"
 
 echo "==> Attente de la sonde locale"
 for _ in $(seq 1 30); do
-  if curl -fsS http://127.0.0.1:8003/healthz >/dev/null 2>&1; then
-    echo "Hub prêt : $(curl -fsS http://127.0.0.1:8003/healthz)"
+  if curl -fsS --noproxy '*' http://127.0.0.1:8003/healthz >/dev/null 2>&1; then
+    echo "Hub prêt : $(curl -fsS --noproxy '*' http://127.0.0.1:8003/healthz)"
     exit 0
   fi
   sleep 3

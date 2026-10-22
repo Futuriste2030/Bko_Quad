@@ -71,4 +71,4 @@ jobs:
             docker compose -f docker-compose.prod.yml --env-file deploy/.env.production up -d --remove-orphans --wait --wait-timeout 180
             docker image prune -f
             docker compose -f docker-compose.prod.yml --env-file deploy/.env.production ps
-            curl -fsS http://127.0.0.1:8003/healthz
+            curl -fsS --noproxy '*' http://127.0.0.1:8003/healthz
