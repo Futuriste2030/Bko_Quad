@@ -22,6 +22,8 @@ const ROLES: { v: Role; label: string }[] = [
   { v: 'comptable', label: 'Comptable' },
 ];
 
+const SITE_ROLES: Role[] = ['agent', 'guide', 'responsable'];
+
 export default function Settings() {
   const { theme, set } = useTheme();
   const { notify } = useToast();
@@ -65,6 +67,7 @@ export default function Settings() {
   const [resetTarget, setResetTarget] = useState<AdminUser | null>(null);
   const [resetPw, setResetPw] = useState('');
   const [toggleTarget, setToggleTarget] = useState<AdminUser | null>(null);
+  const needsSite = SITE_ROLES.includes(uRole);
 
   useEffect(() => {
     if (mayManageUsers) {
@@ -128,12 +131,16 @@ export default function Settings() {
       notify('warning', 'Champs incomplets', 'Identifiant, téléphone et mot de passe (8 min) requis.');
       return;
     }
+    if (needsSite && !uSite) {
+      notify('warning', 'Site requis', 'Choisissez le site d’appartenance de ce rôle.');
+      return;
+    }
     setBusy(true);
     try {
       const u = await createUser({
         username: uName.trim(), phone: uPhone.trim(), role: uRole, password: uPass,
         first_name: uFirst.trim(), last_name: uLast.trim(),
-        ...(uSite ? { site: Number(uSite) } : {}),
+        ...(needsSite && uSite ? { site: Number(uSite) } : {}),
       });
       notify('success', 'Utilisateur créé', `${u.username} — ${u.role}.`);
       setUsers((l) => [...l, u]);
@@ -371,7 +378,7 @@ export default function Settings() {
             {users.map((u) => (
               <div className="row-top" key={u.id}>
                 <span><strong>{[u.first_name, u.last_name].filter(Boolean).join(' ') || u.username}</strong>
-                  <span className="small muted"> {u.username} · {u.role}{u.site_name ? ` · ${u.site_name}` : ''}{u.totp_enabled ? ' · 2FA' : ''}</span>
+                  <span className="small muted"> {u.username} · {u.role}{SITE_ROLES.includes(u.role as Role) ? (u.site_name ? ` · ${u.site_name}` : ' · site non affecté') : ' · tout le réseau'}{u.totp_enabled ? ' · 2FA' : ''}</span>
                   {' '}<span className={`badge ${u.is_active ? 'badge-confirmed' : 'badge-expired'}`}>{u.is_active ? 'Actif' : 'Désactivé'}</span>
                   <br /><span className="small muted num">{u.phone}</span></span>
                 <span className="btn-row">
@@ -406,16 +413,26 @@ export default function Settings() {
                   <Field label="Prénom" htmlFor="u-first"><input id="u-first" value={uFirst} onChange={(e) => setUFirst(e.target.value)} autoComplete="off" /></Field>
                   <Field label="Nom" htmlFor="u-last"><input id="u-last" value={uLast} onChange={(e) => setULast(e.target.value)} autoComplete="off" /></Field>
                   <Field label="Rôle" required htmlFor="u-role">
-                    <select id="u-role" value={uRole} onChange={(e) => setURole(e.target.value as Role)}>
+                    <select id="u-role" value={uRole} onChange={(e) => {
+                      const next = e.target.value as Role;
+                      setURole(next);
+                      if (!SITE_ROLES.includes(next)) setUSite('');
+                    }}>
                       {ROLES.map((r) => <option key={r.v} value={r.v}>{r.label}</option>)}
                     </select>
                   </Field>
-                  <Field label="Site d’appartenance" htmlFor="u-site">
-                    <select id="u-site" value={uSite} onChange={(e) => setUSite(e.target.value)}>
-                      <option value="">—</option>
-                      {sites.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
-                    </select>
-                  </Field>
+                  {needsSite ? (
+                    <Field label="Site d’appartenance" required htmlFor="u-site" hint="Obligatoire pour les rôles de terrain.">
+                      <select id="u-site" value={uSite} onChange={(e) => setUSite(e.target.value)}>
+                        <option value="">—</option>
+                        {sites.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
+                      </select>
+                    </Field>
+                  ) : (
+                    <p className="small muted" style={{ alignSelf: 'end', margin: '0 0 10px' }}>
+                      Direction, comptable et super admin gèrent tout le réseau : aucun site d’appartenance requis.
+                    </p>
+                  )}
                   <Field label="Mot de passe (8 min)" required htmlFor="u-pass"><input id="u-pass" type="password" value={uPass} onChange={(e) => setUPass(e.target.value)} autoComplete="new-password" /></Field>
                 </div>
                 <div className="modal-actions">

@@ -353,6 +353,12 @@ class UserAdminSerializer(serializers.ModelSerializer):
     def get_site_name(self, o):
         return o.site.name if o.site_id else ""
 
+    def validate(self, attrs):
+        role = attrs.get("role", getattr(self.instance, "role", ""))
+        if role in ("admin", "superadmin", "comptable"):
+            attrs["site"] = None
+        return attrs
+
     def validate_phone(self, v):
         qs = User.objects.filter(phone=v)
         if self.instance:

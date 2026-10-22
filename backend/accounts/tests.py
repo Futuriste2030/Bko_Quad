@@ -202,6 +202,19 @@ class ProfileFieldsTest(TestCase):
         u = User.objects.get(username="guide1")
         self.assertEqual(u.site_id, self.site.id)
 
+    def test_admin_direction_sans_site_meme_si_envoye(self):
+        from rest_framework.test import APIClient
+
+        client = APIClient()
+        client.force_authenticate(user=self.root)
+        r = client.post("/api/v1/users/", {
+            "username": "boss1", "phone": "+22370000010", "role": "admin",
+            "password": "secret123", "site": self.site.id,
+        })
+        self.assertEqual(r.status_code, 201)
+        u = User.objects.get(username="boss1")
+        self.assertIsNone(u.site_id)
+
     def test_profil_patch_et_doublon_tel_refuse(self):
         from rest_framework.test import APIClient
 
