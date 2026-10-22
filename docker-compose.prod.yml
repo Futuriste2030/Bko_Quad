@@ -1,0 +1,96 @@
+# BKO Quad Hub — stack de production app.bkoquad.ml.
+# Nginx (hôte) termine le TLS et proxifie vers 127.0.0.1:8003.
+# Copier deploy/.env.production.example vers deploy/.env.production avant
+# le premier démarrage : docker compose -f docker-compose.prod.yml up -d --build
+
+name: bko-quad
+
+x-logging: &default-logging
+  driver: json-file
+  options:
+    max-size: "10m"
+    max-file: "3"
+
+x-app: &app
+  build:
+    context: .
+    dockerfile: Dockerfile
+  image: bko-quad:latest
+  env_file:
+    - deploy/.env.production
+  depends_on:
+    db:
+      condition: service_healthy
+    redis:
+      condition: service_healthy
+  restart: unless-stopped
+  logging: *default-logging
+
+services:
+  db:
+    image: postgres:17-alpine
+    env_file:
+      - deploy/.env.production
+    volumes:
+      - pg_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U \"$$POSTGRES_USER\" -d \"$$POSTGRES_DB\""]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+    restart: unless-stopped
+    logging: *default-logging
+
+  redis:
+    image: redis:7-alpine
+    command: ["redis-server", "--appendonly", "yes"]
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+    restart: unless-stopped
+    logging: *default-logging
+
+  web:
+    <<: *app
+    command: >
+      sh -c "python manage.py migrate --noinput &&
+             exec gunicorn config.wsgi:application
+             --workers 3 --bind 0.0.0.0:8000 --timeout 120
+             --access-logfile - --error-logfile - --forwarded-allow-ips='*'"
+    volumes:
+      - media_data:/app/media
+    ports:
+      - "127.0.0.1:8003:8000"
+
+  worker:
+    <<: *app
+    command: ["celery", "-A", "config", "worker", "-l", "info", "--concurrency=2"]
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      web:
+        condition: service_healthy
+    volumes:
+      - media_data:/app/media
+
+  beat:
+    <<: *app
+    command: ["celery", "-A", "config", "beat", "-l", "info", "--schedule=/tmp/celerybeat-schedule"]
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      web:
+        condition: service_healthy
+
+volumes:
+  pg_data:
+  redis_data:
+  media_data:

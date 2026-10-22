@@ -1,7 +1,13 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { listAnomalies, listCalls, reconcileCall, resolveAnomaly, type CallItem } from '../lib/api';
-import { fmtPhone, fmtSlot } from '../lib/format';
+import { useSiteLink } from '../lib/sitepath';
+import AppShell from '../components/AppShell';
+import { ConfirmDialog, EmptyState, Field, PageHeader, SkeletonList } from '../components/ui';
+import Icon from '../lib/icons';
+import { useToast } from '../lib/toast';
+import { listAnomalies, listCalls, createLine, listLines, reconcileCall, resolveAnomaly, toggleLine, type Anomaly, type CallItem, type TrackedLine } from '../lib/api';
+import { useAuth } from '../lib/auth';
+import { fmtDirection, fmtPhone, fmtSlot } from '../lib/format';
 
 const REASONS = [
   { v: 'renseignement', label: 'Renseignement' },
@@ -11,74 +17,181 @@ const REASONS = [
 ];
 
 export default function Calls() {
+  const link = useSiteLink();
+  const { can } = useAuth();
   const [calls, setCalls] = useState<CallItem[]>([]);
-  const [anomByCall, setAnomByCall] = useState<Record<number, number>>({});
+  const [anoms, setAnoms] = useState<Anomaly[]>([]);
+  const [lines, setLines] = useState<TrackedLine[]>([]);
+  const [lineLabel, setLineLabel] = useState('');
+  const [lineNumber, setLineNumber] = useState('');
+  const mayLines = can('responsable', 'admin');
+  const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
-  const [info, setInfo] = useState('');
   const [reason, setReason] = useState('renseignement');
+  const [pendingResolve, setPendingResolve] = useState<number | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [updatedAt, setUpdatedAt] = useState<Date | null>(null);
+  const { notify } = useToast();
 
+  function load(silent = false) {
+  if (!silent) { setLoading(true); setError(''); }
+    Promise.all([listCalls(), listAnomalies().catch(() => [] as Anomaly[]), listLines().catch(() => [] as TrackedLine[])])
+      .then(([c, a, l]) => { setCalls(c); setAnoms(a); setLines(l); setUpdatedAt(new Date()); if (!silent) setError(''); })
+      .catch((e: Error) => { if (!silent) setError(e.message); })
+      .finally(() => { if (!silent) setLoading(false); });
+  }
+  /* Rechargement live : le journal se met à jour seul toutes les 15 s
+     (pause quand l'onglet est caché), sans déconnexion. */
+  const loadRef = useRef(load);
+  loadRef.current = load;
   useEffect(() => {
-    Promise.all([listCalls(), listAnomalies()])
-      .then(([c, a]) => {
-        setCalls(c);
-        const m: Record<number, number> = {};
-        for (const an of a) if (an.status === 'open') m[an.call] = an.id;
-        setAnomByCall(m);
-      })
-      .catch((e: Error) => setError(e.message));
+    loadRef.current();
+    const id = setInterval(() => { if (!document.hidden) loadRef.current(true); }, 15000);
+    return () => clearInterval(id);
   }, []);
 
-  async function reconcile(id: number) {
-    setError(''); setInfo('');
-    try {
-      const r = await reconcileCall(id);
-      if (r.booking) setInfo(`Appel rapproché : réservation ${r.booking.code}.`);
-      else {
-        if (r.anomaly) setAnomByCall((m) => ({ ...m, [id]: r.anomaly!.id }));
-        setInfo('Aucune réservation trouvée : anomalie créée, motif requis.');
-      }
-    } catch (e) {
-      setError(e instanceof Error ? e.message : 'Rapprochement impossible.');
+  async function addLine() {
+  if (!lineLabel.trim() || !lineNumber.trim()) {
+  notify('warning', 'Libellé et numéro requis', 'Ex. Ligne Business, +22320201212.');
+      return;
     }
+    try {
+      const l = await createLine({ label: lineLabel.trim(), number: lineNumber.trim() });
+      notify('success', 'Ligne suivie', `${l.label} (${l.number}).`);
+      setLineLabel(''); setLineNumber('');
+      load();
+    } catch (e) { notify('error', 'Ajout impossible', e instanceof Error ? e.message : ''); }
   }
 
-  async function resolve(callId: number) {
-    setError(''); setInfo('');
-    const anomalyId = anomByCall[callId];
-    if (!anomalyId) { setError('Rapprochez d’abord l’appel pour créer l’anomalie.'); return; }
+  async function flipLine(l: TrackedLine) {
+  try {
+      await toggleLine(l.id, !l.active);
+      load();
+    } catch (e) { notify('error', 'Modification impossible', e instanceof Error ? e.message : ''); }
+  }
+
+  const openByCall = (id: number) => anoms.find((a) => a.call === id && a.status === 'open');
+  const openCount = anoms.filter((a) => a.status === 'open').length;
+
+  async function reconcile(id: number) {
+  setBusy(true);
     try {
-      await resolveAnomaly(anomalyId, reason);
-      setAnomByCall((m) => { const n = { ...m }; delete n[callId]; return n; });
-      setInfo('Anomalie justifiée.');
-    } catch (e) {
-      setError(e instanceof Error ? e.message : 'Clôture impossible.');
-    }
+      const r = await reconcileCall(id);
+      if (r.booking) notify('success', 'Appel rapproché', `Réservation ${r.booking.code}.`);
+      else notify('warning', 'Anomalie créée', 'Aucune réservation trouvée : motif requis pour clore.');
+      load();
+    } catch (e) { notify('error', 'Rapprochement impossible', e instanceof Error ? e.message : ''); }
+    finally { setBusy(false); }
+  }
+
+  async function doResolve() {
+  if (pendingResolve == null) return;
+    const an = anoms.find((a) => a.id === pendingResolve);
+    if (!an) return;
+    setBusy(true);
+    try {
+      const res = await resolveAnomaly(an.id, reason);
+      if (res.queued) notify('warning', 'Justification consignée hors ligne', 'L’appel sera clôturé au retour du réseau.');
+      else notify('success', 'Anomalie justifiée', 'L’appel est clôturé avec motif.');
+      setPendingResolve(null);
+      load();
+    } catch (e) { notify('error', 'Clôture impossible', e instanceof Error ? e.message : 'Motif obligatoire.'); }
+    finally { setBusy(false); }
   }
 
   return (
-    <div className="main">
-      {error && <div className="alert-error" role="alert">{error}</div>}
-      {info && <div className="card" role="status">{info}</div>}
-      {calls.map((c) => (
-        <article className="card" key={c.id}>
-          <div className="num">{fmtPhone(c.phone_number)}</div>
-          <div className="num">{fmtSlot(c.started_at)} — {c.duration_seconds}s</div>
-          <div style={{ display: 'grid', gap: 8, marginTop: 8 }}>
-            <button className="btn" onClick={() => reconcile(c.id)}>Rapprocher</button>
-            <Link to={`/reservations/nouvelle?phone=${encodeURIComponent(c.phone_number)}`}>
-              <button className="btn btn-accent">Nouvelle réservation</button>
-            </Link>
-            <div className="field">
-              <label htmlFor={`reason-${c.id}`}>Motif (obligatoire pour clore)</label>
-              <select id={`reason-${c.id}`} value={reason} onChange={(e) => setReason(e.target.value)}>
-                {REASONS.map((r) => <option key={r.v} value={r.v}>{r.label}</option>)}
-              </select>
+    <AppShell anomalies={openCount}>
+      <PageHeader title="Appels" sub="Journal d’appels. Chaque appel est rapproché ou justifié — aucune anomalie ne disparaît seule." />
+      <p className="small muted">Actualisé{updatedAt ? ` à ${updatedAt.toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit', second: '2-digit', timeZone: 'Africa/Bamako' })}` : ''} Â· auto toutes les 15 s.</p>
+      <section className="card" aria-label="Numéros suivis">
+        <h2>Numéros d’entreprise suivis</h2>
+        <p className="small muted">Remontée auto par l’APK collecteur (Mali +223, Côte d’Ivoire +225). Seuls responsable et admin gèrent les lignes.</p>
+        <div className="list" style={{ marginTop: 8 }}>
+          {lines.filter((l) => l.active).map((l) => (
+            <div className="row-top" key={l.id}>
+              <span><strong>{l.label}</strong> <span className="num muted">{fmtPhone(l.number)}</span>{l.site_name ? <span className="small muted"> Â· {l.site_name}</span> : null}{l.last_sync ? <span className="small muted"> Â· synchro {fmtSlot(l.last_sync)}</span> : <span className="small muted"> Â· jamais synchronisé</span>}</span>
+              {mayLines && <button type="button" className="btn btn-sm btn-ghost" onClick={() => flipLine(l)}>Suspendre</button>}
             </div>
-            <button className="btn" onClick={() => resolve(c.id)}>Justifier l’appel</button>
+          ))}
+          {lines.filter((l) => !l.active).map((l) => (
+            <div className="row-top" key={l.id}>
+              <span className="muted"><strong>{l.label}</strong> <span className="num">{fmtPhone(l.number)} (suspendu)</span></span>
+              {mayLines && <button type="button" className="btn btn-sm btn-ghost" onClick={() => flipLine(l)}>Réactiver</button>}
+            </div>
+          ))}
+          {lines.length === 0 && !loading && <p className="small muted">Aucune ligne déclarée pour le moment.</p>}
+        </div>
+        {mayLines && (
+          <div className="form-2" style={{ marginTop: 8 }}>
+            <Field label="Libellé" htmlFor="line-label"><input id="line-label" value={lineLabel} onChange={(e) => setLineLabel(e.target.value)} placeholder="Ex. Ligne Business" /></Field>
+            <Field label="Numéro international" htmlFor="line-number"><input id="line-number" type="tel" value={lineNumber} onChange={(e) => setLineNumber(e.target.value)} placeholder="+223…" /></Field>
           </div>
-        </article>
-      ))}
-      {calls.length === 0 && !error && <div className="card"><p>Aucun appel à traiter.</p></div>}
-    </div>
+        )}
+        {mayLines && (
+          <div className="btn-row" style={{ marginTop: 8 }}>
+            <button type="button" className="btn btn-ghost" onClick={addLine}>Ajouter la ligne</button>
+          </div>
+        )}
+      </section>
+      {openCount > 0 && (
+        <div className="banner banner-danger" role="alert">
+          <Icon name="alert" size={20} />
+          <div><strong>{openCount} anomalie{openCount > 1 ? 's' : ''} ouverte{openCount > 1 ? 's' : ''}</strong>
+          <div className="small">Motif obligatoire pour clore.</div></div>
+        </div>
+      )}
+      {loading && <SkeletonList n={4} />}
+      {error && <div className="alert-error" role="alert">{error}</div>}
+      {!loading && !error && calls.length === 0 && (
+        <EmptyState icon="phone" title="Aucun appel à traiter" text="Le journal se remplit à chaque appel entrant." />
+      )}
+      {!loading && !error && (
+        <div className="list">
+          {calls.map((c) => {
+            const an = openByCall(c.id);
+            return (
+              <article className={`row-card${an ? ' alert' : ''}`} key={c.id}>
+                <div className="row-top">
+                  <span className="row-title num">{fmtPhone(c.phone_number)}</span>
+                  {an
+                    ? <span className="badge badge-anomaly"><Icon name="alert" size={14} />Anomalie ouverte</span>
+                    : <span className="badge badge-completed"><Icon name="check" size={14} />Ã€ rapprocher</span>}
+                </div>
+                <div className="row-meta"><span className="num">{fmtSlot(c.started_at)}</span><span className="num">{c.duration_seconds} s</span><span>{fmtDirection(c.direction)}</span></div>
+                <div className="btn-row">
+                  <button type="button" className="btn btn-sm" onClick={() => reconcile(c.id)} disabled={busy}>
+                    <Icon name="refresh" size={16} />Rapprocher
+                  </button>
+                  <Link to={link(`/reservations/nouvelle?phone=${encodeURIComponent(c.phone_number)}`)} className="btn btn-sm btn-accent">
+                    <Icon name="plus" size={16} />Réserver
+                  </Link>
+                </div>
+                <div className="form-2">
+                  <Field label="Motif (obligatoire pour clore)" htmlFor={`reason-${c.id}`}>
+                    <select id={`reason-${c.id}`} value={reason} onChange={(e) => setReason(e.target.value)}>
+                      {REASONS.map((r) => <option key={r.v} value={r.v}>{r.label}</option>)}
+                    </select>
+                  </Field>
+                  <div style={{ display: 'flex', alignItems: 'end' }}>
+                    <button type="button" className="btn btn-sm btn-ghost" disabled={!an || busy}
+                      onClick={() => an && setPendingResolve(an.id)}>
+                      Justifier l’appel
+                    </button>
+                  </div>
+                </div>
+              </article>
+            );
+          })}
+        </div>
+      )}
+      {pendingResolve != null && (
+        <ConfirmDialog
+          title="Clore cette anomalie ?"
+          text={`Motif : ${REASONS.find((r) => r.v === reason)?.label}. Cette clôture est tracée et définitive.`}
+          confirmLabel="Justifier et clore" busy={busy}
+          onConfirm={doResolve} onClose={() => !busy && setPendingResolve(null)}
+        />
+      )}
+    </AppShell>
   );
 }

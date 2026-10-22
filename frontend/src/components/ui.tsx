@@ -1,6 +1,18 @@
-import { useEffect, useRef, type ReactNode } from 'react';
+import { useEffect, useRef, useState, type ReactNode } from 'react';
+import { createPortal } from 'react-dom';
 import Icon, { type IconName } from '../lib/icons';
 import { useTheme } from '../lib/theme';
+
+/* Portail document.body : les modales échappent à tout ancêtre transformé
+   (cartes animées), donc restent centrées sur le viewport. */
+export function Portal({ children }: { children: ReactNode }) {
+  const [el] = useState(() => document.createElement('div'));
+  useEffect(() => {
+    document.body.appendChild(el);
+    return () => { document.body.removeChild(el); };
+  }, [el]);
+  return createPortal(children, el);
+}
 
 /* En-tête d'écran : titre + description + actions. */
 export function PageHeader({ title, sub, actions }: { title: string; sub?: string; actions?: ReactNode }) {

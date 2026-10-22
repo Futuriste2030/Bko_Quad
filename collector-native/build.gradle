@@ -1,0 +1,5 @@
+// BKO Quad Hub — projet natif (aucune dépendance externe, 100 % framework Android).
+// 2 saveurs : standard (WebView seule) et collecteur (WebView + journal d'appels).
+plugins {
+    id("com.android.application") version "8.5.2" apply false
+}

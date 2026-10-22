@@ -12,15 +12,89 @@ class TelephonyError(ValueError):
     pass
 
 
-def normalize_phone(raw):
+def normalize_phone(raw, default_country="223"):
+    """Normalise vers +223 (Mali, 8 chiffres) ou +225 (Côte d'Ivoire, 10 chiffres).
+
+    - International déjà préfixé : gardé tel quel.
+    - 8 chiffres : Mali -> +223XXXXXXXX.
+    - 10 chiffres commençant par 0 : Côte d'Ivoire -> +225XXXXXXXXXX.
+    - Sinon : préfixe du pays de la ligne émettrice (default_country).
+    """
     digits = "".join(c for c in raw if c.isdigit())
     if raw.strip().startswith("+"):
         return "+" + digits
     if digits.startswith("223") and len(digits) == 11:
         return "+" + digits
+    if digits.startswith("225") and len(digits) == 13:
+        return "+" + digits
     if len(digits) == 8:
         return "+223" + digits
-    return "+" + digits
+    if len(digits) == 10 and digits.startswith("0"):
+        return "+225" + digits
+    if default_country == "225" and len(digits) == 10:
+        return "+225" + digits
+    return "+" + default_country + digits
+
+
+def import_calls(entries, line=None):
+    """Importe un lot du journal collecteur (APK entreprise).
+
+    - lots ≤ 500 (contrôlé aussi côté vue), `external_id` idempotent.
+    - normalisation +223/+225 selon le pays de la ligne (défaut Mali).
+    - met à jour `line.last_sync` en cas de succès.
+    - auto-correction : si la durée définitive arrive après un 0 s
+      (synchro pendant l'appel), elle écrase l'ancienne valeur.
+    Retourne (created, skipped, updated, fresh) où fresh liste les créés
+    (téléphone + direction, 20 max) pour les notifications natives.
+    """
+    from django.utils import timezone as _tz
+
+    if len(entries) > 500:
+        raise TelephonyError("Lot limité à 500 appels.")
+    default_country = "223"
+    if line is not None and line.number.startswith("+225"):
+        default_country = "225"
+    created, skipped, updated = 0, 0, 0
+    fresh = []
+    for e in entries:
+        direction = e.get("direction", "")
+        if direction not in ("inbound", "outbound", "missed"):
+            raise TelephonyError("Direction invalide (entrant, sortant, manqué).")
+        raw_phone = str(e.get("phone_number", ""))
+        if not raw_phone:
+            raise TelephonyError("Numéro requis.")
+        phone = normalize_phone(raw_phone, default_country=default_country)
+        external_id = str(e.get("external_id", ""))
+        if not external_id:
+            raise TelephonyError("external_id requis (idempotence).")
+        started_at = e.get("started_at")
+        if started_at is None:
+            raise TelephonyError("started_at requis.")
+        duration = int(e.get("duration_seconds", 0) or 0)
+        obj, was_created = CallLog.objects.get_or_create(
+            external_id=external_id,
+            defaults={
+                "direction": direction,
+                "phone_number": phone,
+                "started_at": started_at,
+                "duration_seconds": duration,
+                "source": "android_app",
+            },
+        )
+        if was_created:
+            created += 1
+            if len(fresh) < 20:
+                fresh.append({"phone_number": phone, "direction": direction})
+        elif duration > obj.duration_seconds:
+            obj.duration_seconds = duration
+            obj.save(update_fields=["duration_seconds"])
+            updated += 1
+        else:
+            skipped += 1
+    if line is not None and (created or updated):
+        line.last_sync = _tz.now()
+        line.save(update_fields=["last_sync"])
+    return created, skipped, updated, fresh
 
 
 def reconcile_call(call_id, window_hours=24):

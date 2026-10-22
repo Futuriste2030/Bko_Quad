@@ -11,7 +11,8 @@ class HasRole(BasePermission):
             return False
         if request.user.is_superuser:
             return True
-        return getattr(request.user, "role", None) in self.allowed_roles
+        role = getattr(request.user, "role", None)
+        return role == "superadmin" or role in self.allowed_roles
 
 
 def role_permission(*roles):
@@ -22,4 +23,8 @@ AgentRoles = role_permission("agent", "responsable", "admin")
 GuideRoles = role_permission("guide", "responsable", "admin")
 ManagerRoles = role_permission("responsable", "admin")
 AdminRoles = role_permission("admin")
+# Gestion des comptes et du système : super administrateur uniquement.
+SuperAdminRoles = role_permission("superadmin")
 CashRoles = role_permission("agent", "guide", "responsable", "admin")
+# Bordereau du jour consultatif (clôture automatique) : mêmes rôles que l'écran.
+ClosingReadRoles = role_permission("agent", "responsable", "admin", "comptable")

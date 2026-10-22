@@ -29,3 +29,25 @@ class Message(models.Model):
 
     def __str__(self):
         return f"{self.channel} {self.created_at:%d/%m %H:%M}"
+
+
+class Notice(models.Model):
+    """Communiqués de la boîte + lettres officielles (phase rédaction interne)."""
+    TYPE_CHOICES = [("communique", "Communiqué"), ("lettre", "Lettre officielle")]
+    STATUS_CHOICES = [("draft", "Brouillon"), ("published", "Publié")]
+
+    type = models.CharField(max_length=15, choices=TYPE_CHOICES, default="communique")
+    title = models.CharField(max_length=200)
+    content = models.TextField(help_text="Contenu mis en forme (HTML simple)")
+    status = models.CharField(max_length=10, choices=STATUS_CHOICES, default="draft")
+    published_at = models.DateTimeField(null=True, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    created_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL, null=True, blank=True, on_delete=models.SET_NULL,
+        related_name="notices")
+
+    class Meta:
+        ordering = ["-id"]
+
+    def __str__(self):
+        return f"{self.title} ({self.status})"

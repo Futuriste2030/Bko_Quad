@@ -18,6 +18,7 @@ class CashbookEntry(models.Model):
     DIRECTION_CHOICES = [(IN, "Recette"), (OUT, "Dépense")]
     CATEGORY_CHOICES = [
         ("recette_reservation", "Recette réservation"),
+        ("recette_manuelle", "Recette manuelle (ancien)"),
         ("carburant", "Carburant"),
         ("reparation", "Réparation"),
         ("salaire", "Salaire"),
@@ -88,3 +89,52 @@ class MonthlyClosing(models.Model):
 
     def __str__(self):
         return f"Clôture {self.month:%m/%Y}"
+
+
+class BankTransaction(models.Model):
+    """Compte bancaire du GIE, distinct du livre de caisse.
+
+    Versement (DEPOSIT, bordereau requis) et virement reçu (TRANSFER,
+    sans référence) créditent ; retrait (WITHDRAWAL, chèque/référence
+    requis) débite. Montants entiers FCFA, jamais supprimés.
+    """
+
+    DEPOSIT = "deposit"
+    WITHDRAWAL = "withdrawal"
+    TRANSFER = "transfer"
+    TYPE_CHOICES = [(DEPOSIT, "Versement"), (WITHDRAWAL, "Retrait"), (TRANSFER, "Virement")]
+
+    type = models.CharField(max_length=10, choices=TYPE_CHOICES)
+    amount = models.PositiveIntegerField(help_text="FCFA, entier")
+    date = models.DateField()
+    reason = models.CharField(max_length=200)
+    bank = models.CharField(max_length=60, blank=True, default="",
+                            help_text="Banque BKO Quad concernée")
+    counterparty_bank = models.CharField(max_length=60, blank=True, default="",
+                                         help_text="Banque du client (virement)")
+    receipt_number = models.CharField(max_length=60, blank=True, default="",
+                                      help_text="N° bordereau de versement")
+    check_number = models.CharField(max_length=60, blank=True, default="",
+                                    help_text="N° chèque / référence virement")
+    person_first_name = models.CharField(max_length=80)
+    person_last_name = models.CharField(max_length=80)
+    created_by = models.ForeignKey(settings.AUTH_USER_MODEL, null=True, blank=True,
+                                   on_delete=models.SET_NULL, related_name="bank_transactions")
+    locked = models.BooleanField(default=False)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ["date", "id"]
+
+    def __str__(self):
+        ref = self.receipt_number or self.check_number or self.counterparty_bank or self.bank or "—"
+        return f"Banque {self.get_type_display()} {self.amount} FCFA ({ref})"
+
+    def save(self, *args, **kwargs):
+        if self.pk and BankTransaction.objects.filter(pk=self.pk, locked=True).exists():
+            raise RuntimeError("Opération bancaire verrouillée : contactez la direction.")
+        super().save(*args, **kwargs)
+
+    def delete(self, *args, **kwargs):
+        raise RuntimeError("Opération bancaire jamais supprimée : passez une écriture inverse.")

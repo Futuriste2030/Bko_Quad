@@ -5,7 +5,7 @@ from datetime import date
 from django.db import transaction
 from django.db.models import Sum
 
-from finance.models import CashbookEntry, MonthlyClosing
+from finance.models import BankTransaction, CashbookEntry, MonthlyClosing
 
 
 class FinanceError(ValueError):
@@ -104,3 +104,103 @@ def close_month(year, month):
             month=first, defaults={"opening": opening, "closing": closing_val})
         CashbookEntry.objects.filter(date__year=year, date__month=month).update(locked=True)
         return closing
+
+
+# --- Banque (compte distinct de la caisse) -----------------------------------
+
+def bank_balance():
+    """Solde bancaire = versements − retraits (jamais de saisie libre)."""
+    agg = BankTransaction.objects.aggregate(
+        dep=Sum("amount", filter=models_Q_bank_in()),
+        ret=Sum("amount", filter=models_Q_bank_out()),
+    )
+    return (agg["dep"] or 0) - (agg["ret"] or 0)
+
+
+def models_Q_bank_in():
+    from django.db.models import Q
+
+    return Q(type__in=(BankTransaction.DEPOSIT, BankTransaction.TRANSFER))
+
+
+def models_Q_bank_out():
+    from django.db.models import Q
+
+    return Q(type=BankTransaction.WITHDRAWAL)
+
+
+def add_bank_transaction(*, type, day, reason, amount, first_name, last_name,
+                         receipt_number="", check_number="", bank="",
+                         counterparty_bank="", created_by=None):
+    """Versement (bordereau requis), retrait (chèque/réf requis) ou
+    virement reçu (sans référence : nom + banques).
+
+    Banque BKO requise pour tous. Référence unique par type, retrait refusé
+    si le solde deviendrait négatif. Le virement crédite (encaissement).
+    """
+    if type not in (BankTransaction.DEPOSIT, BankTransaction.WITHDRAWAL,
+                    BankTransaction.TRANSFER):
+        raise FinanceError("Type d'opération invalide (versement, retrait ou virement).")
+    if amount is None or int(amount) <= 0:
+        raise FinanceError("Montant invalide.")
+    reason = str(reason or "").strip()
+    first_name = str(first_name or "").strip()
+    last_name = str(last_name or "").strip()
+    receipt_number = str(receipt_number or "").strip()
+    check_number = str(check_number or "").strip()
+    bank = str(bank or "").strip()
+    counterparty_bank = str(counterparty_bank or "").strip()
+    if not reason:
+        raise FinanceError("Motif requis.")
+    if not bank:
+        raise FinanceError("Banque BKO Quad requise.")
+    if not first_name or (not last_name and type != BankTransaction.TRANSFER):
+        raise FinanceError("Nom et prénom requis.")
+    if type == BankTransaction.DEPOSIT:
+        if not receipt_number:
+            raise FinanceError("Numéro de bordereau requis pour un versement.")
+        if BankTransaction.objects.filter(
+                type=BankTransaction.DEPOSIT, receipt_number=receipt_number).exists():
+            raise FinanceError("Bordereau déjà enregistré.")
+    elif type == BankTransaction.WITHDRAWAL:
+        if not check_number:
+            raise FinanceError("Numéro de chèque / référence requis pour un retrait.")
+        if BankTransaction.objects.filter(
+                type=BankTransaction.WITHDRAWAL, check_number=check_number).exists():
+            raise FinanceError("Chèque / référence déjà enregistré.")
+    with transaction.atomic():
+        if type == BankTransaction.WITHDRAWAL and bank_balance() - int(amount) < 0:
+            raise FinanceError("Retrait refusé : solde bancaire deviendrait négatif, alerte direction.")
+        tx = BankTransaction.objects.create(
+            type=type, date=day, reason=reason, amount=int(amount),
+            person_first_name=first_name, person_last_name=last_name,
+            receipt_number=receipt_number, check_number=check_number,
+            bank=bank, counterparty_bank=counterparty_bank,
+            created_by=created_by,
+        )
+        return tx
+
+
+def bank_month_rows(year, month, bank=None):
+    """Lignes du mois triées + solde progressif (base = solde antérieur).
+
+    Filtre optionnel par banque BKO (le solde global reste affiché à part).
+    """
+    before_qs = BankTransaction.objects.filter(date__lt=date(year, month, 1))
+    if bank:
+        before_qs = before_qs.filter(bank=bank)
+    before = before_qs.aggregate(
+        dep=Sum("amount", filter=models_Q_bank_in()),
+        ret=Sum("amount", filter=models_Q_bank_out()),
+    )
+    running = (before["dep"] or 0) - (before["ret"] or 0)
+    qs = BankTransaction.objects.filter(date__year=year, date__month=month)
+    if bank:
+        qs = qs.filter(bank=bank)
+    rows = []
+    for tx in qs.order_by("date", "id"):
+        credit = tx.amount if tx.type in (BankTransaction.DEPOSIT, BankTransaction.TRANSFER) else 0
+        debit = tx.amount if tx.type == BankTransaction.WITHDRAWAL else 0
+        running += credit - debit
+        rows.append({"tx": tx, "credit": credit, "debit": debit, "running": running})
+    return rows

@@ -1,0 +1,48 @@
+plugins {
+    id("com.android.application")
+}
+
+android {
+    namespace = "ml.bkoquad.hub"
+    compileSdk = 34
+
+    defaultConfig {
+        applicationId = "ml.bkoquad.hub"
+        minSdk = 26
+        targetSdk = 34
+        versionCode = 1
+        versionName = "1.0"
+    }
+
+    flavorDimensions += "usage"
+    productFlavors {
+        create("standard") {
+            // APK agence : WebView seule, sans permission sensible.
+            dimension = "usage"
+            applicationIdSuffix = ".hub"
+            manifestPlaceholders = ["appName": "BKO Hub"]
+            buildConfigField("boolean", "IS_COLLECTOR", "false")
+        }
+        create("collecteur") {
+            // APK entreprise (1 par pays) : WebView + lecture journal + fond 15 min.
+            dimension = "usage"
+            applicationIdSuffix = ".collecteur"
+            manifestPlaceholders = ["appName": "BKO Collecteur"]
+            buildConfigField("boolean", "IS_COLLECTOR", "true")
+        }
+    }
+
+    buildFeatures {
+        buildConfig = true
+    }
+
+    buildTypes {
+        release {
+            minifyEnabled = false
+        }
+    }
+    compileOptions {
+        sourceCompatibility = JavaVersion.VERSION_17
+        targetCompatibility = JavaVersion.VERSION_17
+    }
+}

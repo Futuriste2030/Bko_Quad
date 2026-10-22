@@ -24,7 +24,7 @@ class PaymentLink(models.Model):
 
 
 class Payment(models.Model):
-    NATURE_CHOICES = [("deposit", "Acompte"), ("balance", "Solde")]
+    NATURE_CHOICES = [("deposit", "Versement"), ("balance", "Solde")]
     MODE_CHOICES = [("aggregator", "Agrégateur"), ("cash", "Espèces")]
     STATUS_CHOICES = [("pending", "En attente"), ("paid", "Payé"), ("failed", "Échoué")]
 

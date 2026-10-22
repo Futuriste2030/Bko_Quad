@@ -42,3 +42,31 @@ class CommsTest(TestCase):
         m = log_whatsapp(booking=self.booking, text="Bonjour", sent_by=self.agent)
         self.assertEqual(m.channel, "whatsapp_link")
         self.assertEqual(self.booking.messages.count(), 1)
+
+
+class NoticeTest(TestCase):
+    def setUp(self):
+        self.admin = User.objects.create_user(
+            username="boss", password="x", phone="+22370000001", role="admin")
+        self.agent = User.objects.create_user(
+            username="agent1", password="x", phone="+22370000009", role="agent")
+
+    def test_rediger_publier_lire(self):
+        from rest_framework.test import APIClient
+
+        client = APIClient()
+        client.force_authenticate(user=self.admin)
+        r = client.post("/api/v1/notices/", {
+            "type": "communique", "title": "Fermeture lundi",
+            "content": "<p>Fermé lundi.</p>",
+        })
+        self.assertEqual(r.status_code, 201)
+        self.assertEqual(r.data["status"], "draft")
+        p = client.post(f"/api/v1/notices/{r.data['id']}/publish/")
+        self.assertEqual(p.status_code, 200)
+        self.assertEqual(p.data["status"], "published")
+        self.assertIsNotNone(p.data["published_at"])
+        client.force_authenticate(user=self.agent)
+        self.assertEqual(client.get("/api/v1/notices/").status_code, 200)
+        self.assertEqual(client.post("/api/v1/notices/", {
+            "type": "lettre", "title": "X", "content": "Y"}).status_code, 403)

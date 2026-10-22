@@ -1,36 +1,67 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
+import { useSiteLink } from '../lib/sitepath';
 import AppShell from '../components/AppShell';
 import StatusBadge from '../components/StatusBadge';
-import { EmptyState, IconButton, PageHeader, SkeletonList } from '../components/ui';
+import { ConfirmDialog, EmptyState, IconButton, PageHeader, SkeletonList } from '../components/ui';
 import { useToast } from '../lib/toast';
 import Icon from '../lib/icons';
-import { cancelBooking, listBookings, type Booking } from '../lib/api';
+import {
+  cancelBooking, checkInBooking, completeBooking, expireBooking, listActivities, listBookingEvents, listBookings, listSlots, listVehicles, noShowBooking,
+  type Activity, type Booking, type BookingEventItem, type Slot, type Vehicle,
+} from '../lib/api';
+import { fmtCountdown, getRide, remainingMs, rideFromCheckin, useNow, type Ride } from '../lib/ride';
+import { useSync } from '../lib/sync';
 import { fcfa, fmtSlot } from '../lib/format';
 
 const FILTERS = [
   { v: 'all', label: 'Toutes' },
-  { v: 'pending_deposit', label: 'Attente acompte' },
+  { v: 'pending_deposit', label: 'En attente' },
   { v: 'confirmed', label: 'Confirmées' },
   { v: 'checked_in', label: 'Arrivées' },
   { v: 'completed', label: 'Terminées' },
   { v: 'cancelled', label: 'Annulées' },
 ];
 
+type Act = { kind: 'checkin' | 'complete' | 'noshow' | 'expire'; b: Booking };
+const ACT_TEXT: Record<Act['kind'], { title: (c: string) => string; text: string; ok: string }> = {
+  checkin: { title: (c) => `Valider l’arrivée de ${c} ?`, text: 'Le talon est consommé : un second passage sera refusé.', ok: 'Valider l’arrivée' },
+  complete: { title: (c) => `Terminer ${c} ?`, text: 'La sortie est clôturée après le retour des quads.', ok: 'Terminer la sortie' },
+  noshow: { title: (c) => `Marquer ${c} absent ?`, text: 'Le client ne s’est pas présenté, le créneau est libéré.', ok: 'Marquer absent' },
+  expire: { title: (c) => `Expirer ${c} ?`, text: 'Le paiement n’est pas arrivé dans le délai, le créneau est libéré.', ok: 'Marquer expirée' },
+};
+
+/* Changement de statut : seules les transitions tracées du serveur.
+   Â« Confirmée Â» vient d’un encaissement (espèces : écran Factures ;
+   en ligne : webhook de l’agrégateur), jamais d’un bouton. */
 export default function Reservations() {
+  const link = useSiteLink();
   const [items, setItems] = useState<Booking[]>([]);
+  const [slots, setSlots] = useState<Slot[]>([]);
+  const [activities, setActivities] = useState<Activity[]>([]);
+  const [events, setEvents] = useState<BookingEventItem[]>([]);
+  const [vehicles, setVehicles] = useState<Vehicle[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [q, setQ] = useState('');
   const [f, setF] = useState('all');
   const [toCancel, setToCancel] = useState<Booking | null>(null);
+  const [acting, setActing] = useState<Act | null>(null);
   const [reason, setReason] = useState('');
   const [busy, setBusy] = useState(false);
   const { notify } = useToast();
 
   function load() {
-    setLoading(true); setError('');
-    listBookings().then(setItems).catch((e: Error) => setError(e.message)).finally(() => setLoading(false));
+  setLoading(true); setError('');
+    Promise.all([
+      listBookings(),
+      listSlots().catch(() => [] as Slot[]),
+      listVehicles().catch(() => [] as Vehicle[]),
+      listActivities().catch(() => [] as Activity[]),
+      listBookingEvents().catch(() => [] as BookingEventItem[]),
+    ])
+      .then(([b, s, v, a, e]) => { setItems(b); setSlots(s); setVehicles(v); setActivities(a); setEvents(e); })
+      .catch((e: Error) => setError(e.message)).finally(() => setLoading(false));
   }
   useEffect(load, []);
 
@@ -39,8 +70,22 @@ export default function Reservations() {
     (!q.trim() || b.code.toLowerCase().includes(q.trim().toLowerCase())),
   ), [items, f, q]);
 
+  /* J : réservations saisies sans réseau, encore à synchroniser. */
+  const { ops } = useSync();
+  const localRows = useMemo(() => ops
+    .filter((o) => o.kind === 'booking')
+    .map((o) => ({
+      id: Number(o.localId ?? 0),
+      code: String(o.meta.code ?? '—'),
+      customer: String(o.meta.customer ?? '—'),
+      total: Number(o.meta.total ?? 0),
+      persons: Number(o.meta.persons ?? 0),
+      at: o.createdAt,
+      status: o.status,
+    })), [ops]);
+
   async function doCancel() {
-    if (!toCancel) return;
+  if (!toCancel) return;
     if (!reason.trim()) { notify('warning', 'Motif obligatoire', 'Précisez le motif d’annulation pour tracer.'); return; }
     setBusy(true);
     try {
@@ -52,12 +97,51 @@ export default function Reservations() {
     finally { setBusy(false); }
   }
 
+  async function doAct() {
+  if (!acting) return;
+    setBusy(true);
+    try {
+      const fn = { checkin: checkInBooking, complete: completeBooking, noshow: noShowBooking, expire: expireBooking }[acting.kind];
+      const b = await fn(acting.b.id);
+      notify('success', ACT_TEXT[acting.kind].ok, `${b.code} — transition tracée.`);
+      setActing(null);
+      load();
+    } catch (e) { notify('error', 'Transition impossible', e instanceof Error ? e.message : ''); }
+    finally { setBusy(false); }
+  }
+
+  const platesOf = (b: Booking) => {
+    const ids = slots.find((s) => s.id === b.slot)?.vehicles ?? [];
+    return ids.map((id) => vehicles.find((v) => v.id === id)?.plate ?? '').filter(Boolean).join(', ');
+  };
+
+  const terminal = (s: string) => ['completed', 'cancelled', 'no_show', 'expired'].includes(s);
+
+  /* Minuteur des sorties en cours : minuteur local du scan, sinon heure
+     d'arrivée du serveur (marche depuis n'importe quel téléphone). */
+  const now = useNow(items.some((b) => b.status === 'checked_in'));
+  const durationOf = (b: Booking): number => {
+    const slot = slots.find((s) => s.id === b.slot);
+    const act = activities.find((a) => a.id === slot?.activity);
+    return act?.duration_minutes && act.duration_minutes > 0 ? act.duration_minutes : 60;
+  };
+  const rideOf = (b: Booking): Ride | null => {
+    if (b.status !== 'checked_in') return null;
+    const local = getRide(b.code);
+    if (local) return local;
+    const evt = events
+      .filter((e) => e.booking === b.id && e.action === 'status->checked_in')
+      .sort((x, y) => y.id - x.id)[0];
+    if (!evt) return null;
+    return rideFromCheckin(b.code, b.id, evt.created_at, durationOf(b));
+  };
+
   return (
     <AppShell>
       <PageHeader
         title="Réservations"
-        sub="Cartes sur mobile, tableau détaillé sur ordinateur. Motif obligatoire pour toute annulation."
-        actions={<Link to="/reservations/nouvelle" className="btn btn-accent"><Icon name="plus" size={18} />Nouvelle réservation</Link>}
+        sub="Â« Confirmée Â» = paiement encaissé — jamais un bouton. Le guide scanne à l’arrivée (minuteur lancé), puis au retour pour terminer."
+        actions={<Link to={link("/reservations/nouvelle")} className="btn btn-accent"><Icon name="plus" size={18} />Nouvelle réservation</Link>}
       />
       <div className="card">
         <div className="form-2">
@@ -76,8 +160,42 @@ export default function Reservations() {
       {loading && <SkeletonList n={4} />}
       {error && <div className="alert-error" role="alert">{error}</div>}
       {!loading && !error && rows.length === 0 && (
-        <EmptyState icon="ticket" title="Aucune réservation" text="Touchez « Nouvelle réservation » pour commencer."
-          action={<Link to="/reservations/nouvelle" className="btn btn-primary">Nouvelle réservation</Link>} />
+        <EmptyState icon="ticket" title="Aucune réservation" text="Touchez Â« Nouvelle réservation Â» pour commencer."
+          action={<Link to={link("/reservations/nouvelle")} className="btn btn-primary">Nouvelle réservation</Link>} />
+      )}
+
+      {localRows.length > 0 && (
+        <section className="card" aria-label="Réservations saisies hors ligne">
+          <div className="chart-title">
+            <h3>Saisies hors ligne</h3>
+            <small>{localRows.length} à synchroniser</small>
+          </div>
+          <p className="small muted" style={{ marginBottom: 8 }}>
+            Ces réservations ont été prises sans réseau : elles n’existent pas encore dans le Hub et ne
+            sont confirmées qu’après l’envoi (le créneau peut être refusé, il faut alors arbitrer).
+          </p>
+          <div className="list">
+            {localRows.map((l) => (
+              <article className="row-card" key={`local-${l.id}`}>
+                <div className="row-top">
+                  <span className="stub row-title num">{l.code}</span>
+                  {l.status === 'failed'
+                    ? <span className="badge badge-anomaly"><Icon name="alert" size={14} />Refusée</span>
+                    : <span className="badge badge-sync"><Icon name="clock" size={14} />À synchroniser</span>}
+                </div>
+                <div className="row-meta">
+                  <span>{l.customer}</span>
+                  <span className="num">{l.persons} pers.</span>
+                  <span className="num">{new Date(l.at).toLocaleString('fr-FR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit', timeZone: 'Africa/Bamako' })}</span>
+                </div>
+                <div className="row-top">
+                  <strong className="num">{fcfa(l.total)}</strong>
+                  <Link to={link('/synchronisation')} className="small">Voir la file</Link>
+                </div>
+              </article>
+            ))}
+          </div>
+        </section>
       )}
 
       {!loading && !error && rows.length > 0 && (
@@ -91,14 +209,63 @@ export default function Reservations() {
                 </div>
                 <div className="row-meta">
                   <span className="num">{fmtSlot(b.expires_at)}</span>
-                  <span className="num">{b.persons} pers. · {b.quads} quad{b.quads > 1 ? 's' : ''}</span>
+                  <span className="num">{b.persons} pers. Â· {b.quads} quad{b.quads > 1 ? 's' : ''}</span>
+                  {platesOf(b) && <span className="num">Quads : {platesOf(b)}</span>}
                 </div>
                 <div className="row-top">
                   <strong className="num">{fcfa(b.total)}</strong>
                   <span className="small muted num">Reste dû : {fcfa(Math.max(0, b.total - b.deposit_due))}</span>
-                  {b.status !== 'cancelled' && (
+                </div>
+                {b.status === 'checked_in' && (() => {
+                  const r = rideOf(b);
+                  if (!r) return null;
+                  const left = remainingMs(r, now);
+                  const total = Math.max(1, r.endsAt - r.startedAt);
+                  const pct = Math.max(0, Math.min(100, (left / total) * 100));
+                  return (
+                    <div className="ride-timer" role="timer"
+                      aria-label={left <= 0 ? `Sortie ${b.code} à clôturer` : `Temps restant ${fmtCountdown(left)}`}>
+                      <div className="row-top">
+                        <span><Icon name="clock" size={16} /> <strong>Minuteur Â· {r.durationMin} min</strong></span>
+                        <strong className="num">{left <= 0 ? 'Ã€ clôturer' : fmtCountdown(left)}</strong>
+                      </div>
+                      <div className="meter" role="progressbar" aria-valuenow={Math.round(100 - pct)} aria-valuemin={0} aria-valuemax={100}>
+                        <span style={{ width: `${100 - pct}%` }} />
+                      </div>
+                      {left <= 0 && <div className="small">Durée écoulée : scannez le QR pour terminer.</div>}
+                    </div>
+                  );
+                })()}
+                <div className="btn-row">
+                  {b.status === 'confirmed' && (
+                    <>
+                      <Link to={link(`/scanner?code=${encodeURIComponent(b.code)}`)} className="btn btn-sm btn-accent">
+                        <Icon name="scan" size={16} />Scanner
+                      </Link>
+                      <button type="button" className="btn btn-sm" onClick={() => setActing({ kind: 'checkin', b })}>Arrivée</button>
+                      <button type="button" className="btn btn-sm btn-ghost" onClick={() => setActing({ kind: 'noshow', b })}>Absent</button>
+                    </>
+                  )}
+                  {b.status === 'checked_in' && (
+                    <>
+                      <Link to={link(`/scanner?code=${encodeURIComponent(b.code)}`)} className="btn btn-sm btn-accent">
+                        <Icon name="scan" size={16} />Scanner
+                      </Link>
+                      <button type="button" className="btn btn-sm" onClick={() => setActing({ kind: 'complete', b })}>Terminée</button>
+                    </>
+                  )}
+                  {b.status === 'pending_deposit' && (
+                    <>
+                      <Link to={link("/factures")} className="btn btn-sm btn-accent">Encaisser</Link>
+                      <button type="button" className="btn btn-sm btn-ghost" onClick={() => setActing({ kind: 'expire', b })}>Expirer</button>
+                    </>
+                  )}
+                  {!terminal(b.status) && (
                     <IconButton icon="x" label={`Annuler ${b.code}`} className="danger plain" onClick={() => setToCancel(b)} />
                   )}
+                  <Link to={link(`/documents/${b.id}/facture`)} className="icon-btn plain" aria-label={`Facture de ${b.code}`} title={`Facture de ${b.code}`}>
+                    <Icon name="file" size={20} />
+                  </Link>
                 </div>
               </article>
             ))}
@@ -111,17 +278,57 @@ export default function Reservations() {
                   <tr key={b.id}>
                     <td className="num"><strong>{b.code}</strong></td>
                     <td className="num">{fmtSlot(b.expires_at)}</td>
-                    <td className="num">{b.persons} · {b.quads} quads</td>
+                    <td className="num">{b.persons} Â· {b.quads} quads</td>
                     <td className="num">{fcfa(b.total)}</td>
                     <td className="num">{fcfa(Math.max(0, b.total - b.deposit_due))}</td>
                     <td><StatusBadge status={b.status} /></td>
-                    <td>{b.status !== 'cancelled' && <IconButton icon="x" label={`Annuler ${b.code}`} className="danger plain" onClick={() => setToCancel(b)} />}</td>
+                    <td>
+                      {b.status === 'confirmed' && (
+                        <>
+                          <Link to={link(`/scanner?code=${encodeURIComponent(b.code)}`)} className="icon-btn plain" aria-label={`Scanner ${b.code} (arrivée)`} title={`Scanner ${b.code} (arrivée)`}>
+                            <Icon name="scan" size={20} />
+                          </Link>
+                          <IconButton icon="check" label={`Arrivée de ${b.code}`} className="plain" onClick={() => setActing({ kind: 'checkin', b })} />
+                        </>
+                      )}
+                      {b.status === 'checked_in' && (
+                        <>
+                          {(() => {
+                            const r = rideOf(b);
+                            if (!r) return null;
+                            const left = remainingMs(r, now);
+                            return (
+                              <span className="badge badge-confirmed num" role="timer" title={`Formule ${r.durationMin} min`}>
+                                <Icon name="clock" size={14} />{left <= 0 ? 'Ã€ clôturer' : fmtCountdown(left)}
+                              </span>
+                            );
+                          })()}
+                          <Link to={link(`/scanner?code=${encodeURIComponent(b.code)}`)} className="icon-btn plain" aria-label={`Scanner ${b.code} (fin de sortie)`} title={`Scanner ${b.code} (fin de sortie)`}>
+                            <Icon name="scan" size={20} />
+                          </Link>
+                          <IconButton icon="check" label={`Terminer ${b.code}`} className="plain" onClick={() => setActing({ kind: 'complete', b })} />
+                        </>
+                      )}
+                      {!terminal(b.status) && <IconButton icon="x" label={`Annuler ${b.code}`} className="danger plain" onClick={() => setToCancel(b)} />}
+                      <Link to={link(`/documents/${b.id}/facture`)} className="icon-btn plain" aria-label={`Facture de ${b.code}`} title={`Facture de ${b.code}`}>
+                        <Icon name="file" size={20} />
+                      </Link>
+                    </td>
                   </tr>
                 ))}
               </tbody>
             </table>
           </div>
         </>
+      )}
+
+      {acting && (
+        <ConfirmDialog
+          title={ACT_TEXT[acting.kind].title(acting.b.code)}
+          text={`${ACT_TEXT[acting.kind].text} Transition tracée (qui, quand, avant, après).`}
+          confirmLabel={ACT_TEXT[acting.kind].ok} busy={busy}
+          onConfirm={doAct} onClose={() => !busy && setActing(null)}
+        />
       )}
 
       {toCancel && (

@@ -5,3 +5,10 @@ drf-spectacular==0.30.0
 psycopg[binary]==3.2.13
 celery==5.6.3
 redis==8.1.0
+pillow==11.3.0
+reportlab==4.5.1
+openpyxl==3.1.5
+qrcode==7.4.2
+python-dotenv==1.1.1
+whitenoise==6.9.0
+gunicorn==23.0.0

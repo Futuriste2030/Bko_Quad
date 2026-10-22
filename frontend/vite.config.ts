@@ -1,5 +1,6 @@
 import { VitePWA } from 'vite-plugin-pwa';
 import tailwindcss from '@tailwindcss/vite';
+import basicSsl from '@vitejs/plugin-basic-ssl';
 import react from '@vitejs/plugin-react';
 import { defineConfig } from 'vite';
 
@@ -7,6 +8,9 @@ export default defineConfig({
   plugins: [
     react(),
     tailwindcss(),
+    // HTTPS en dev : la caméra et les notifications exigent une origine
+    // sécurisée (sur téléphone via IP locale, sinon refus d'office).
+    basicSsl(),
     VitePWA({
       registerType: 'autoUpdate',
       // Jamais de SW en dev : le cache applicatif ne concerne que la prod.
@@ -16,7 +20,7 @@ export default defineConfig({
         // Police auto-hébergée disponible hors ligne (guide §11).
         globPatterns: ['**/*.{js,css,html,ico,png,svg,webp,woff,woff2}'],
         // L'API ne passe jamais par le cache du service worker.
-        navigateFallbackDenylist: [/^\/api\//],
+        navigateFallbackDenylist: [/^\/api\//, /\.apk$/],
       },
       manifest: {
         name: 'BKO Quad Hub',
@@ -34,8 +38,12 @@ export default defineConfig({
     }),
   ],
   server: {
+    host: true,
     proxy: {
       '/api': 'http://127.0.0.1:8000',
+      // Médias Django via la même origine : pas de contenu mixte en HTTPS,
+      // images (cachet, signature) visibles aussi sur téléphone.
+      '/media': 'http://127.0.0.1:8000',
     },
   },
 });

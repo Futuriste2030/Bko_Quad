@@ -2,14 +2,27 @@ import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Eye, EyeOff } from 'lucide-react';
 import { useAuth } from '../lib/auth';
+import { TotpRequiredError } from '../lib/api';
 import Icon, { type IconName } from '../lib/icons';
 import { useToast } from '../lib/toast';
 import { ThemeSwitch } from '../components/ui';
 
 const POINTS: { icon: IconName; title: string; text: string }[] = [
-  { icon: 'ticket', title: 'Réservations tracées', text: '7 statuts, motif obligatoire, jamais de suppression.' },
-  { icon: 'phone', title: '100 % des appels rapprochés', text: 'Anomalie persistante tant qu’elle n’est pas justifiée.' },
-  { icon: 'wallet', title: 'Argent suivi dès l’origine', text: 'Acomptes, caisse et bordereau de clôture du jour.' },
+  {
+    icon: 'ticket',
+    title: 'Réservations intégralement tracées',
+    text: 'Sept statuts officiels, toute modification exige un motif — aucune suppression n’est possible.',
+  },
+  {
+    icon: 'phone',
+    title: 'Chaque appel rapproché',
+    text: 'Un appel non lié à une réservation reste signalé comme anomalie jusqu’à justification.',
+  },
+  {
+    icon: 'wallet',
+    title: 'Argent suivi dès l’origine',
+    text: 'Paiements, caisse et bordereau de clôture sont rattachés à la réservation dès l’encaissement.',
+  },
 ];
 
 const inputCls =
@@ -19,6 +32,8 @@ export default function Login() {
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
   const [showPw, setShowPw] = useState(false);
+  const [otp, setOtp] = useState('');
+  const [totpRequired, setTotpRequired] = useState(false);
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
   const { login } = useAuth();
@@ -32,11 +47,20 @@ export default function Login() {
     if (!password) { setError('Saisissez votre mot de passe pour continuer.'); return; }
     setBusy(true);
     try {
-      await login(username.trim(), password);
+      await login(username.trim(), password, otp.replace(/\s/g, ''));
       notify('success', 'Connexion réussie', 'Bienvenue sur le Hub BKO Quad.');
       nav('/');
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Connexion impossible.');
+      if (err instanceof TotpRequiredError) {
+        setTotpRequired(true);
+        setOtp('');
+        setError('Code de double authentification obligatoire. Ouvrez votre application de codes, puis saisissez les 6 chiffres.');
+      } else if (err instanceof TotpRequiredError || /code/i.test(err instanceof Error ? err.message : '')) {
+        setTotpRequired(true);
+        setError(err instanceof Error ? err.message : 'Code invalide.');
+      } else {
+        setError(err instanceof Error ? err.message : 'Connexion impossible.');
+      }
     } finally {
       setBusy(false);
     }
@@ -66,8 +90,8 @@ export default function Login() {
             </div>
           </div>
           <p className="mt-4 max-w-md text-base leading-relaxed text-[var(--ink-muted)]">
-            L’unique source de vérité des réservations : acomptes, appels, caisse
-            et clôture, synchronisés avec l’API.
+            Plateforme officielle de gestion des réservations BKO Quad : paiements,
+            appels, caisse et clôture du jour, centralisés et synchronisés avec l’API.
           </p>
           <ul className="mt-6 grid max-w-md gap-3">
             {POINTS.map((p) => (
@@ -127,7 +151,21 @@ export default function Login() {
                   autoComplete="current-password" placeholder="Votre mot de passe" disabled={busy}
                   className={`${inputCls} pr-12`}
                 />
-                <button
+            {totpRequired && (
+              <div className="grid gap-1.5">
+                <label htmlFor="login-otp" className="text-sm font-semibold">
+                  Code de double authentification <span aria-hidden="true" className="text-[var(--danger)]">*</span>
+                </label>
+                <input
+                  id="login-otp" value={otp} onChange={(e) => setOtp(e.target.value)}
+                  inputMode="numeric" autoComplete="one-time-code"
+                  placeholder="6 chiffres" disabled={busy} maxLength={6}
+                  className={`${inputCls} tracking-[0.4em] text-center`}
+                />
+              </div>
+            )}
+
+            <button
                   type="button"
                   onClick={() => setShowPw((v) => !v)}
                   aria-label={showPw ? 'Masquer le mot de passe' : 'Afficher le mot de passe'}
@@ -148,8 +186,9 @@ export default function Login() {
             </button>
 
             <p className="text-center text-sm text-[var(--ink-muted)]">
-              Compte créé par votre responsable. La vérification en deux étapes
-              sera exigée avant le pilote.
+              {totpRequired
+                ? 'Ouvrez votre application d’authentification, le code change toutes les 30 secondes.'
+                : 'Compte créé par votre responsable. La vérification en deux étapes sera exigée avant le pilote.'}
             </p>
           </div>
         </form>

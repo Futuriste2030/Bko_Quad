@@ -1,6 +1,20 @@
 __pycache__/
 *.pyc
 db.sqlite3
+db.sqlite3.bak-*
 .env
+deploy/.env.production
 node_modules/
 frontend/dist/
+backend/staticfiles/
+backend/frontend_dist/
+backend/media/
+celerybeat-schedule*
+deploy/backups/
+*.dump.gpg
+*.tar.gz.gpg
+/BKO Quad Hub*PRD*.pdf
+/apks/
+collector-native/.gradle/
+collector-native/local.properties
+collector-native/**/build/

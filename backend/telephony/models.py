@@ -67,3 +67,19 @@ class DailyClosing(models.Model):
 
     def __str__(self):
         return f"Clôture {self.date:%d/%m/%Y}"
+
+
+class TrackedLine(models.Model):
+    """Numéros d'entreprise dont le journal est rapproché (ligne Business, fixe agence…)."""
+    label = models.CharField(max_length=120, help_text="Ex. Ligne Business, Fixe agence")
+    number = models.CharField(max_length=20, unique=True, help_text="Format international, ex +22320201212")
+    site = models.ForeignKey(
+        "catalogue.Site", null=True, blank=True, on_delete=models.SET_NULL,
+        related_name="lines", help_text="Site rattaché (Mali / Côte d'Ivoire)")
+    active = models.BooleanField(default=True)
+    collect_enabled = models.BooleanField(
+        default=True, help_text="Coupe-circuit : si décoché, l'APK ne peut plus remonter (voir Paramètres)")
+    last_sync = models.DateTimeField(null=True, blank=True, help_text="Dernière remontée du journal")
+
+    def __str__(self):
+        return f"{self.label} ({self.number})"

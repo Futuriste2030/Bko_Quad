@@ -1,0 +1,20 @@
+// À fusionner dans android/app/build.gradle (1 projet, 2 APK, même PWA) :
+android {
+    flavorDimensions += "usage"
+    productFlavors {
+        create("standard") { // APK agence : WebView seule, sans permission sensible
+            dimension = "usage"
+            applicationIdSuffix = ".hub"
+            buildConfigField("boolean", "IS_COLLECTOR", "false")
+        }
+        create("collecteur") { // APK entreprise : WebView + CallLog + fond (sideload)
+            dimension = "usage"
+            applicationIdSuffix = ".collecteur"
+            buildConfigField("boolean", "IS_COLLECTOR", "true")
+        }
+    }
+}
+// AndroidManifest (saveur collecteur uniquement) :
+// <uses-permission android:name="android.permission.READ_CALL_LOG" />
+// <uses-permission android:name="android.permission.READ_PHONE_STATE" />
+// <uses-permission android:name="android.permission.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS" />

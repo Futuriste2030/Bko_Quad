@@ -1,0 +1,446 @@
+package ml.bkoquad.hub;
+
+import android.Manifest;
+import android.app.Activity;
+import android.content.Intent;
+import android.content.pm.PackageManager;
+import android.net.Uri;
+import android.os.Bundle;
+import android.os.PowerManager;
+import android.provider.Settings;
+import android.view.KeyEvent;
+import android.view.View;
+import android.webkit.WebView;
+import android.webkit.WebViewClient;
+import android.webkit.WebChromeClient;
+import android.webkit.PermissionRequest;
+import android.webkit.GeolocationPermissions;
+import android.net.http.SslError;
+import android.webkit.SslErrorHandler;
+import java.io.FileInputStream;
+import java.io.FileOutputStream;
+import java.io.PrintWriter;
+import java.io.StringWriter;
+import java.nio.charset.StandardCharsets;
+import android.widget.Button;
+import android.widget.EditText;
+import android.widget.LinearLayout;
+import android.widget.ScrollView;
+import android.widget.TextView;
+import android.widget.Toast;
+
+/** Coquille native : config 1 fois, puis WebView plein écran vers la PWA. */
+public class MainActivity extends Activity {
+    private static final int REQ_CALL_LOG = 41;
+    private static final int REQ_WEB = 42;
+    private static final int REQ_GEO = 43;
+    private static final int REQ_NOTIF = 44;
+
+    private static boolean visible;
+
+    /** Vrai quand l'utilisateur regarde le Hub (pas de notif système redondante). */
+    public static boolean isVisible() {
+        return visible;
+    }
+
+    private WebView web;
+    private PermissionRequest pendingWebPerm;
+    private String pendingGeoOrigin;
+    private GeolocationPermissions.Callback pendingGeoCallback;
+    private int volDownCount;
+    private long volDownFirst;
+
+    @Override
+    protected void onCreate(Bundle savedInstanceState) {
+        super.onCreate(savedInstanceState);
+        installCrashCatcher();
+        // Plus aucune fermeture silencieuse : toute erreur de démarrage
+        // s'affiche en plein écran (à photographier / recopier).
+        try {
+            if (Prefs.isConfigured(this)) showWeb();
+            else showConfig();
+        } catch (Throwable t) {
+            showFatal(t);
+        }
+        try {
+            showCrashIfAny();
+        } catch (Throwable ignored) {}
+    }
+
+    /** Enregistre tout crash dans crash.log (diagnostic affiché au redémarrage). */
+    private void installCrashCatcher() {
+        Thread.UncaughtExceptionHandler prev = Thread.getDefaultUncaughtExceptionHandler();
+        Thread.setDefaultUncaughtExceptionHandler((t, e) -> {
+            try {
+                StringWriter sw = new StringWriter();
+                e.printStackTrace(new PrintWriter(sw));
+                String report = e.toString() + "\n" + sw;
+                if (report.length() > 4000) report = report.substring(0, 4000);
+                try (FileOutputStream fos = openFileOutput("crash.log", MODE_PRIVATE)) {
+                    fos.write(report.getBytes(StandardCharsets.UTF_8));
+                } catch (Exception ignored) {}
+            } catch (Exception ignored) {}
+            if (prev != null) prev.uncaughtException(t, e);
+        });
+    }
+
+    private void showCrashIfAny() {
+        String report = null;
+        try (FileInputStream fis = openFileInput("crash.log")) {
+            byte[] buf = new byte[fis.available()];
+            if (fis.read(buf) > 0) report = new String(buf, StandardCharsets.UTF_8);
+        } catch (Exception ignored) {}
+        if (report == null) return;
+        deleteFile("crash.log");
+        new android.app.AlertDialog.Builder(this)
+                .setTitle("Diagnostic — fermeture précédente")
+                .setMessage(report)
+                .setPositiveButton("OK", null)
+                .show();
+    }
+
+    /** Écran d'erreur fatale : affiche le diagnostic au lieu de fermer l'app. */
+    private void showFatal(Throwable t) {
+        StringWriter sw = new StringWriter();
+        t.printStackTrace(new PrintWriter(sw));
+        String report = "Démarrage impossible :\n" + t + "\n" + sw;
+        if (report.length() > 4000) report = report.substring(0, 4000);
+        try (FileOutputStream fos = openFileOutput("crash.log", MODE_PRIVATE)) {
+            fos.write(report.getBytes(StandardCharsets.UTF_8));
+        } catch (Exception ignored) {}
+        ScrollView scroll = new ScrollView(this);
+        TextView v = new TextView(this);
+        v.setPadding(32, 32, 32, 32);
+        v.setText(report + "\n\nEnvoyez ce texte au support.");
+        v.setTextIsSelectable(true);
+        scroll.addView(v);
+        setContentView(scroll);
+    }
+
+    // ---------- Écran de configuration (1 fois, téléphone d'entreprise) ----------
+    private void showConfig() {
+        ScrollView scroll = new ScrollView(this);
+        LinearLayout root = vertical();
+        root.addView(title("BKO Hub — configuration"));
+        root.addView(hint(BuildConfig.IS_COLLECTOR
+                ? "Téléphone d'entreprise : compte collecteur (rôle agent)."
+                : "Agence : compte personnel (agent, guide, responsable…)."));
+        root.addView(hint("Configuration unique, verrouillée après enregistrement."));
+
+        EditText hub = field(root, "Adresse du Hub", "https://hub.bko-quad.ml/");
+        hub.setText("https://hub.bko-quad.ml/");
+        EditText user = field(root, "Nom d'utilisateur", "Ex. collecteur-bamako");
+        EditText pass = field(root, "Mot de passe", "••••••••");
+        pass.setInputType(android.text.InputType.TYPE_CLASS_TEXT
+                | android.text.InputType.TYPE_TEXT_VARIATION_PASSWORD);
+        EditText site = field(root, "Site (Bamako / Abidjan)", "Bamako");
+        site.setText("Bamako");
+        EditText line = field(root, "line_id (voir API /lines/)", "Ex. 1");
+        line.setInputType(android.text.InputType.TYPE_CLASS_NUMBER);
+
+        TextView err = new TextView(this);
+        Button save = new Button(this);
+        save.setText("Enregistrer");
+        save.setOnClickListener(v -> {
+            err.setText("Connexion…");
+            String hubUrl = hub.getText().toString().trim();
+            new Thread(() -> {
+                try {
+                    Api.Auth auth = Api.login(hubUrl.endsWith("/") ? hubUrl : hubUrl + "/",
+                            user.getText().toString().trim(), pass.getText().toString());
+                    int lineId = Integer.parseInt(line.getText().toString().trim());
+                    Prefs.save(MainActivity.this, hubUrl,
+                            site.getText().toString().trim(), lineId,
+                            auth.access, auth.refresh);
+                    // Détection à partir de zéro : seul l'avenir est remonté,
+                    // jamais l'historique (quota préservé, pas de bruit).
+                    Prefs.setLastTs(MainActivity.this, System.currentTimeMillis());
+                    Sync.schedule(MainActivity.this);
+                    runOnUiThread(this::showWeb);
+                } catch (Exception e) {
+                    runOnUiThread(() -> err.setText("Échec : " + e.getMessage()));
+                }
+            }).start();
+        });
+        root.addView(save);
+        root.addView(err);
+        scroll.addView(root);
+        setContentView(scroll);
+    }
+
+    // ---------- Écran principal : la PWA en plein écran, rien d'autre ----------
+    // Synchro 100 % automatique : au démarrage + fond toutes les 15 min.
+    // Config verrouillée : triple appui volume-bas pour la rouvrir (support).
+    private void showWeb() {
+        web = new WebView(this);
+        web.getSettings().setJavaScriptEnabled(true);
+        web.getSettings().setDomStorageEnabled(true);
+        web.getSettings().setGeolocationEnabled(true);
+        web.getSettings().setMediaPlaybackRequiresUserGesture(false);
+        web.setWebViewClient(new WebViewClient() {
+            @Override
+            public void onPageFinished(WebView view, String url) {
+                view.evaluateJavascript("window.BkoQuad={isNativeApp:true};", null);
+            }
+
+            @Override
+            public void onReceivedSslError(WebView view, SslErrorHandler handler, SslError error) {
+                // Test local uniquement : le Vite dev utilise un certificat
+                // auto-signé (basicSsl). En prod (HTTPS public), refusé.
+                if (BuildConfig.DEBUG) handler.proceed();
+                else handler.cancel();
+            }
+        });
+        // Autorisations demandées par la PWA (onboarding, scanner QR) :
+        // sans WebChromeClient, la WebView les refuse sans rien afficher.
+        web.setWebChromeClient(new WebChromeClient() {
+            @Override
+            public void onPermissionRequest(PermissionRequest request) {
+                java.util.List<String> need = new java.util.ArrayList<>();
+                for (String res : request.getResources()) {
+                    if (PermissionRequest.RESOURCE_VIDEO_CAPTURE.equals(res)
+                            && checkSelfPermission(Manifest.permission.CAMERA)
+                            != PackageManager.PERMISSION_GRANTED) {
+                        need.add(Manifest.permission.CAMERA);
+                    }
+                    if (PermissionRequest.RESOURCE_AUDIO_CAPTURE.equals(res)
+                            && checkSelfPermission(Manifest.permission.RECORD_AUDIO)
+                            != PackageManager.PERMISSION_GRANTED) {
+                        need.add(Manifest.permission.RECORD_AUDIO);
+                    }
+                }
+                if (need.isEmpty()) {
+                    request.grant(request.getResources());
+                } else {
+                    pendingWebPerm = request;
+                    requestPermissions(need.toArray(new String[0]), REQ_WEB);
+                }
+            }
+
+            @Override
+            public void onGeolocationPermissionsShowPrompt(String origin,
+                    GeolocationPermissions.Callback callback) {
+                if (checkSelfPermission(Manifest.permission.ACCESS_FINE_LOCATION)
+                        == PackageManager.PERMISSION_GRANTED) {
+                    callback.invoke(origin, true, false);
+                } else {
+                    pendingGeoOrigin = origin;
+                    pendingGeoCallback = callback;
+                    requestPermissions(new String[]{Manifest.permission.ACCESS_FINE_LOCATION},
+                            REQ_GEO);
+                }
+            }
+        });
+        // Pont PWA -> natif : window.BkoNative.notify(titre, texte, route).
+        web.addJavascriptInterface(new BkoBridge(this), "BkoNative");
+        String route = getIntent().getStringExtra("route");
+        if (route != null && !route.isEmpty()) {
+            web.loadUrl(Prefs.hub(this) + route.replaceFirst("^/", ""));
+        } else {
+            web.loadUrl(Prefs.hub(this));
+        }
+        setContentView(web);
+
+        if (BuildConfig.IS_COLLECTOR) {
+            if (checkSelfPermission(Manifest.permission.READ_CALL_LOG)
+                    != PackageManager.PERMISSION_GRANTED) {
+                requestPermissions(new String[]{Manifest.permission.READ_CALL_LOG,
+                        Manifest.permission.READ_PHONE_STATE}, REQ_CALL_LOG);
+            } else {
+                autoSync();
+            }
+            // Temps réel : observateur du journal (notification permanente).
+            try {
+                startForegroundService(new Intent(this, SyncService.class));
+            } catch (Exception e) {
+                Toast.makeText(this, "Service temps réel non démarré : " + e.getMessage(),
+                        Toast.LENGTH_LONG).show();
+            }
+            askBatteryOnce();
+            Sync.schedule(this);
+        }
+        // Notifications système locales (pont JS + synchros), Android 13+.
+        if (android.os.Build.VERSION.SDK_INT >= 33
+                && checkSelfPermission("android.permission.POST_NOTIFICATIONS")
+                != PackageManager.PERMISSION_GRANTED) {
+            requestPermissions(new String[]{"android.permission.POST_NOTIFICATIONS"}, REQ_NOTIF);
+        }
+    }
+
+    /** Synchro silencieuse : seul un échec s'affiche (toast bref). */
+    private void autoSync() {
+        new Thread(() -> {
+            String msg;
+            try {
+                msg = Sync.run(MainActivity.this);
+            } catch (Throwable t) {
+                msg = "Échec synchro : " + t;
+            }
+            if (!msg.startsWith("Synchro OK") && !msg.equals("Rien de nouveau à envoyer.")) {
+                String out = msg;
+                runOnUiThread(() -> Toast.makeText(MainActivity.this, out, Toast.LENGTH_LONG).show());
+            }
+        }).start();
+    }
+
+    /** Exemption batterie demandée une seule fois (sinon l'OS tue le fond). */
+    private void askBatteryOnce() {
+        if (Prefs.battAsked(this)) return;
+        Prefs.setBattAsked(this);
+        PowerManager pm = (PowerManager) getSystemService(POWER_SERVICE);
+        if (pm != null && !pm.isIgnoringBatteryOptimizations(getPackageName())) {
+            new android.app.AlertDialog.Builder(this)
+                    .setTitle("Arrière-plan")
+                    .setMessage("Pour remonter les appels même app fermée, désactivez l'optimisation batterie pour BKO Collecteur.")
+                    .setPositiveButton("OK", (d, w) -> askBatteryExemption())
+                    .setNegativeButton("Plus tard", null)
+                    .show();
+        }
+    }
+
+    @Override
+    protected void onResume() {
+        super.onResume();
+        visible = true;
+        // L'app déjà ouverte ne repasse pas par onCreate : resynchronise
+        // à chaque retour au premier plan (collecteur + permission OK).
+        if (BuildConfig.IS_COLLECTOR && Prefs.isConfigured(this)
+                && checkSelfPermission(Manifest.permission.READ_CALL_LOG)
+                == PackageManager.PERMISSION_GRANTED) {
+            autoSync();
+        }
+    }
+
+    @Override
+    protected void onPause() {
+        visible = false;
+        super.onPause();
+    }
+
+    @Override
+    protected void onNewIntent(Intent intent) {
+        super.onNewIntent(intent);
+        setIntent(intent);
+        // Touché d'une notification : ouvre l'écran Hub demandé.
+        String route = intent.getStringExtra("route");
+        if (web != null && route != null && !route.isEmpty()) {
+            web.loadUrl(Prefs.hub(this) + route.replaceFirst("^/", ""));
+        }
+    }
+    @Override
+    public boolean dispatchKeyEvent(KeyEvent event) {
+        if (event.getKeyCode() == KeyEvent.KEYCODE_VOLUME_DOWN
+                && event.getAction() == KeyEvent.ACTION_DOWN) {
+            long now = System.currentTimeMillis();
+            if (now - volDownFirst > 2000) {
+                volDownCount = 0;
+                volDownFirst = now;
+            }
+            if (++volDownCount >= 3) {
+                volDownCount = 0;
+                new android.app.AlertDialog.Builder(this)
+                        .setTitle("Support")
+                        .setMessage("Rouvrir la configuration (ligne, compte) ?")
+                        .setPositiveButton("Oui", (d, w) -> {
+                            Prefs.clear(this);
+                            if (web != null) web.clearHistory();
+                            showConfig();
+                        })
+                        .setNeutralButton("Rattraper 24 h", (d, w) -> {
+                            // Reprend les appels des dernières 24 h (ex. test
+                            // passé avant le curseur), sans toucher au reste.
+                            Prefs.setLastTs(this,
+                                    System.currentTimeMillis() - 24L * 3600_000L);
+                            autoSync();
+                        })
+                        .setNegativeButton("Non", null)
+                        .show();
+                return true;
+            }
+        }
+        return super.dispatchKeyEvent(event);
+    }
+
+    /** Tecno / Infinix / Xiaomi / Huawei tuent le fond par défaut : demander l'exemption. */
+    private void askBatteryExemption() {
+        PowerManager pm = (PowerManager) getSystemService(POWER_SERVICE);
+        if (pm != null && !pm.isIgnoringBatteryOptimizations(getPackageName())) {
+            try {
+                startActivity(new Intent(Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS,
+                        Uri.parse("package:" + getPackageName())));
+            } catch (Exception ignored) {}
+        }
+    }
+
+    @Override
+    public void onRequestPermissionsResult(int code, String[] perms, int[] results) {
+        if (code == REQ_CALL_LOG) {
+            if (results.length > 0 && results[0] == PackageManager.PERMISSION_GRANTED) {
+                autoSync();
+            } else {
+                Toast.makeText(this, "Journal d'appels refusé : collecte impossible (voir paramètres Android).",
+                        Toast.LENGTH_LONG).show();
+            }
+        }
+        if (code == REQ_WEB && pendingWebPerm != null) {
+            java.util.List<String> granted = new java.util.ArrayList<>();
+            for (String res : pendingWebPerm.getResources()) {
+                if (PermissionRequest.RESOURCE_VIDEO_CAPTURE.equals(res)
+                        && checkSelfPermission(Manifest.permission.CAMERA)
+                        == PackageManager.PERMISSION_GRANTED) {
+                    granted.add(res);
+                }
+                if (PermissionRequest.RESOURCE_AUDIO_CAPTURE.equals(res)
+                        && checkSelfPermission(Manifest.permission.RECORD_AUDIO)
+                        == PackageManager.PERMISSION_GRANTED) {
+                    granted.add(res);
+                }
+            }
+            if (granted.isEmpty()) pendingWebPerm.deny();
+            else pendingWebPerm.grant(granted.toArray(new String[0]));
+            pendingWebPerm = null;
+        }
+        if (code == REQ_GEO && pendingGeoCallback != null) {
+            boolean ok = results.length > 0 && results[0] == PackageManager.PERMISSION_GRANTED;
+            pendingGeoCallback.invoke(pendingGeoOrigin, ok, false);
+            pendingGeoCallback = null;
+            pendingGeoOrigin = null;
+        }
+    }
+
+    @Override
+    public void onBackPressed() {
+        if (web != null && web.getVisibility() == View.VISIBLE && web.canGoBack()) web.goBack();
+        else super.onBackPressed();
+    }
+
+    private LinearLayout vertical() {
+        LinearLayout l = new LinearLayout(this);
+        l.setOrientation(LinearLayout.VERTICAL);
+        l.setPadding(32, 32, 32, 32);
+        return l;
+    }
+
+    private TextView title(String t) {
+        TextView v = new TextView(this);
+        v.setText(t);
+        v.setTextSize(20);
+        return v;
+    }
+
+    private TextView hint(String t) {
+        TextView v = new TextView(this);
+        v.setText(t);
+        return v;
+    }
+
+    private EditText field(LinearLayout root, String label, String placeholder) {
+        TextView l = new TextView(this);
+        l.setText(label);
+        root.addView(l);
+        EditText e = new EditText(this);
+        e.setHint(placeholder);
+        root.addView(e);
+        return e;
+    }
+}

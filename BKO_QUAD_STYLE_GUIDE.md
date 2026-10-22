@@ -143,7 +143,7 @@ Règle d'or : **l'orange est rare**. Un seul élément orange fort par écran (l
 
 | Statut | Jeton | Badge (texte noir sauf indication) |
 | --- | --- | --- |
-| En attente d'acompte | `--warning` | Fond jaune, texte noir |
+| En attente de paiement | `--warning` | Fond jaune, texte noir |
 | Confirmée | `--success` | Fond vert, texte blanc |
 | Arrivée validée | `--info` | Fond bleu, texte blanc |
 | Terminée | `--ink-muted` | Contour gris, fond transparent |
@@ -236,7 +236,7 @@ Règles :
 | --- | --- | --- |
 | Information | `--info` | « Brouillon enregistré sur ce téléphone » |
 | Succès | `--success` | « Réservation confirmée, message envoyé » |
-| Attention | `--warning` | « Acompte non reçu, expire dans 2 h » |
+| Attention | `--warning` | « Paiement non reçu, expire dans 2 h » |
 | Erreur | `--danger` | « Connexion perdue, réessayez » |
 
 Les anomalies de contrôle (appel sans réservation, écart de caisse) s'affichent en **bannière rouge persistante** en haut de l'accueil du responsable : elles ne disparaissent pas toutes seules.
@@ -283,7 +283,7 @@ export const fcfa = (n: number) =>
   `${Math.round(n).toLocaleString('fr-FR').replace(/\s/g, '\u202f')} FCFA`;
 ```
 
-Vocabulaire à employer de façon constante : **réservation** (jamais « booking »), **créneau**, **acompte**, **guide**, **clôture du jour**, **anomalie**, **bordereau**.
+Vocabulaire à employer de façon constante : **réservation** (jamais « booking »), **créneau**, **formule**, **paiement**, **guide**, **clôture du jour**, **anomalie**, **bordereau**.
 
 ---
 

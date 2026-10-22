@@ -117,25 +117,10 @@
   --chart-area: #f5f3ef;
 }
 
-/* Suit le système quand aucun choix enregistré */
-@media (prefers-color-scheme: dark) {
-  :root:not([data-theme]) {
-    color-scheme: dark;
-    --bg: #0a0a0a;
-    --bg-subtle: #101010;
-    --surface: #161616;
-    --surface-2: #222222;
-    --ink: #f5f3ef;
-    --ink-muted: #b5b0a6;
-    --border: #2e2e2e;
-    --border-strong: #f5f3ef;
-    --success: #4cc38a;
-    --danger: #ff6b6b;
-    --info: #6ea0ff;
-    --chart-grid: #2e2e2e;
-    --chart-bar: #f5f3ef;
-    --chart-area: #f5f3ef;
-  }
+/* Défaut = clair, même si le système est en sombre.
+   Seul un choix explicite (data-theme="dark") affiche le sombre. */
+:root:not([data-theme]) {
+  color-scheme: light;
 }
 
 * { box-sizing: border-box; }
