@@ -170,7 +170,7 @@ export default function Communication() {
         actions={mayWrite ? <button type="button" className="btn btn-accent" onClick={() => setOpen(true)}><Icon name="plus" size={18} />Rédiger</button> : undefined}
       />
       <div className="card no-print">
-        <SiteFilter hint="Affiche les documents du site et du réseau ; la rédaction suit le site actif." />
+        <SiteFilter hint="Communiqués du site et du réseau ; la rédaction suit le site affiché." />
       </div>
       <div className="segmented no-print" role="group" aria-label="Type de document">
         <button type="button" className="chip" aria-pressed={tab === 'communique'} onClick={() => setTab('communique')}>Communiqués</button>

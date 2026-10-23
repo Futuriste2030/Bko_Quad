@@ -234,7 +234,7 @@ export default function HR() {
       />
 
       <div className="card">
-        <SiteFilter hint="Filtre les salariés et documents RH du site." />
+        <SiteFilter hint="Salariés et documents du site affiché." />
       </div>
 
       <div className="segmented" role="tablist" aria-label="Rubriques RH">
