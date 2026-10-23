@@ -284,3 +284,25 @@ class ClotureAutomatiqueTest(TestCase):
         with at(20, 5):
             self.assertTrue(client.get(f"/api/v1/closings/?date={today}").data["closed"])
         self.assertTrue(DailyClosing.objects.filter(date=timezone.localdate()).exists())
+
+
+class CloturePlanificationTest(TestCase):
+    """La tâche planifiée doit viser la vraie tâche Celery, à 20h Bamako."""
+
+    def test_beat_20h_et_rattrapage(self):
+        from django.conf import settings
+
+        from telephony.tasks import close_day
+
+        self.assertEqual(close_day.name, "telephony.close_day")
+        schedule = settings.CELERY_BEAT_SCHEDULE
+        self.assertEqual(schedule["cloture-journee-20h"]["task"], close_day.name)
+        self.assertEqual(
+            set(schedule["cloture-journee-20h"]["schedule"].hour),
+            {settings.BKO_CLOSING_HOUR})
+        self.assertEqual(
+            set(schedule["cloture-journee-20h"]["schedule"].minute), {0})
+        rattrapage = schedule["cloture-rattrapage"]
+        self.assertEqual(rattrapage["task"], close_day.name)
+        self.assertEqual(set(rattrapage["schedule"].minute), {15})
+        self.assertEqual(set(rattrapage["schedule"].hour), {0, 3, 6, 9, 12, 15, 18, 21})

@@ -181,6 +181,7 @@ class CustomerViewSet(viewsets.ModelViewSet):
 
 
 RESTRICTED_SITE_ROLES = ("agent", "guide", "responsable")
+GLOBAL_SITE_ROLES = ("admin", "superadmin", "comptable")
 
 
 def scoped_site(user):
@@ -194,6 +195,25 @@ def scoped_site(user):
         return None
     if getattr(user, "role", None) in RESTRICTED_SITE_ROLES and user.site_id:
         return user.site_id
+    return None
+
+
+def requested_site(request):
+    """Site effectif d'une lecture : choix du profil transverse ou site impose.
+
+    Les roles de terrain restent verrouilles sur leur site, quoi qu'ils
+    passent en query string. Direction, super administrateur et comptable
+    peuvent lire un site precis via `?site=<id>` ; sans parametre (ou avec
+    `reseau`) ils voient tout le reseau.
+    """
+    user = getattr(request, "user", None)
+    if not getattr(user, "is_authenticated", False):
+        return None
+    if getattr(user, "role", None) in RESTRICTED_SITE_ROLES:
+        return user.site_id or None
+    raw = (request.query_params.get("site") or "").strip()
+    if raw.isdigit() and int(raw) > 0:
+        return int(raw)
     return None
 
 
@@ -211,17 +231,19 @@ def site_guard(user, obj, message="Hors de votre site."):
 
 
 class SiteScopeMixin:
-    """Filtre de lecture/edition par site pour agent, guide et responsable.
+    """Filtre de lecture par site (roles de terrain + choix des profils globaux).
 
-    Admin, comptable et comptes sans site voient le tout ; le mixin ne
-    touche ni aux permissions ni au serializer.
+    Agent, guide et responsable sont verrouilles sur leur site. Direction,
+    super administrateur et comptable filtrent via `?site=<id>` ; sans
+    parametre ils voient le tout. Le mixin ne touche ni aux permissions ni
+    au serializer.
     """
 
     site_lookup = "site"
 
     def get_queryset(self):
         qs = super().get_queryset()
-        site = scoped_site(self.request.user)
+        site = requested_site(self.request)
         if site is not None:
             qs = qs.filter(**{self.site_lookup: site})
         return qs
@@ -243,6 +265,17 @@ class SiteViewSet(SiteScopeMixin, CatalogueViewSetMixin, viewsets.ModelViewSet):
 class ActivityViewSet(SiteScopeMixin, CatalogueViewSetMixin, viewsets.ModelViewSet):
     queryset = Activity.objects.all()
     serializer_class = ActivitySerializer
+
+    def destroy(self, request, *args, **kwargs):
+        from django.db.models import ProtectedError
+
+        try:
+            return super().destroy(request, *args, **kwargs)
+        except ProtectedError:
+            return Response(
+                {"detail": "Formule utilisée par des créneaux : supprimez d'abord les "
+                           "créneaux libres, ou conservez-la pour l'historique."},
+                status=400)
 
 
 class SlotViewSet(SiteScopeMixin, CatalogueViewSetMixin, viewsets.ModelViewSet):
@@ -792,8 +825,12 @@ class ExpenseView(APIView):
                     site = Site.objects.get(pk=imposed)
                 except Site.DoesNotExist:
                     return Response({"detail": "Site manquant sur votre compte."}, status=403)
-            elif request.data.get("site"):
-                site = Site.objects.filter(pk=request.data["site"]).first()
+            else:
+                raw_site = request.data.get("site") or requested_site(request)
+                if raw_site:
+                    site = Site.objects.filter(pk=raw_site).first()
+                    if site is None:
+                        return Response({"detail": "Site introuvable."}, status=400)
             entry = add_entry(
                 day=date(year, month, day_n),
                 category=category,
@@ -831,7 +868,7 @@ class MonthSummaryView(APIView):
         except (ValueError, TypeError):
             return Response({"detail": "Mois invalide."}, status=400)
         closing = MonthlyClosing.objects.filter(month=first).first()
-        site = scoped_site(self.request.user)
+        site = requested_site(self.request)
         if site is not None:
             base = CashbookEntry.objects.filter(site_id=site)
             opening, balance, locked = 0, None, False
@@ -847,8 +884,11 @@ class MonthSummaryView(APIView):
         ).aggregate(s=Sum("amount"))["s"] or 0
         if site is not None:
             balance = inn - out
+        site_name = Site.objects.filter(pk=site).values_list("name", flat=True).first() if site else ""
         return Response({
             "month": first.isoformat(),
+            "site": site,
+            "site_name": site_name or "",
             "opening": opening,
             "inn": inn,
             "out": out,
@@ -857,9 +897,13 @@ class MonthSummaryView(APIView):
         })
 
 
-class BankTransactionViewSet(mixins.ListModelMixin, mixins.RetrieveModelMixin,
-                             viewsets.GenericViewSet):
-    """Historique bancaire : écritures jamais modifiées ni supprimées."""
+class BankTransactionViewSet(SiteScopeMixin, mixins.ListModelMixin,
+                             mixins.RetrieveModelMixin, viewsets.GenericViewSet):
+    """Historique bancaire : écritures jamais modifiées ni supprimées.
+
+    Filtre site : imposé aux rôles de terrain, choisi par les profils
+    globaux via `?site=` (voir SiteScopeMixin).
+    """
     queryset = BankTransaction.objects.all().order_by("-date", "-id")
     serializer_class = BankTransactionSerializer
     permission_classes = [FinanceReadRoles]
@@ -877,7 +921,11 @@ class BankTransactionViewSet(mixins.ListModelMixin, mixins.RetrieveModelMixin,
 
 
 class BankWriteView(APIView):
-    """Versement (bordereau requis), retrait (chèque/réf requis) ou virement (sans réf)."""
+    """Versement (bordereau requis), retrait (chèque/réf requis) ou virement (sans réf).
+
+    Le site est imposé aux rôles de terrain ; les profils globaux le
+    joignent au corps (`site`) ou le laissent vide (opération réseau).
+    """
 
     permission_classes = [ManagerRoles]
     tx_type = None
@@ -889,6 +937,13 @@ class BankWriteView(APIView):
         try:
             day_raw = request.data.get("date") or timezone.localdate().isoformat()
             year, month, day_n = (int(x) for x in str(day_raw).split("-"))
+            imposed = scoped_site(request.user)
+            raw_site = imposed or request.data.get("site") or requested_site(request)
+            site = None
+            if raw_site:
+                site = Site.objects.filter(pk=raw_site).first()
+                if site is None:
+                    return Response({"detail": "Site introuvable."}, status=400)
             tx = add_bank_transaction(
                 type=self.tx_type,
                 day=date(year, month, day_n),
@@ -900,6 +955,7 @@ class BankWriteView(APIView):
                 check_number=request.data.get("check_number", ""),
                 bank=request.data.get("bank", ""),
                 counterparty_bank=request.data.get("counterparty_bank", ""),
+                site=site,
                 created_by=request.user,
             )
         except (KeyError, ValueError, TypeError):
@@ -929,10 +985,11 @@ class BankTransferView(BankWriteView):
 
 
 class BankSummaryView(APIView):
-    """Rapprochement : solde total + lignes du mois avec solde progressif.
+    """Rapprochement : solde global + lignes du mois avec solde progressif.
 
-    Filtre optionnel ?bank= (banque BKO) : lignes et totaux filtrés,
-    le solde global reste affiché (solde réel du compte).
+    Filtres optionnels : `?site=` (rôles globaux ; imposé aux rôles de
+    terrain) et `?bank=`. Les lignes, totaux et cumul suivent le site ;
+    `balance` reste le solde réel du compte bancaire (global).
     """
 
     permission_classes = [FinanceReadRoles]
@@ -945,12 +1002,17 @@ class BankSummaryView(APIView):
         except (ValueError, TypeError):
             return Response({"detail": "Mois invalide."}, status=400)
         bank = (request.query_params.get("bank") or "").strip() or None
-        rows = bank_month_rows(year, month, bank=bank)
+        site = requested_site(request)
+        rows = bank_month_rows(year, month, bank=bank, site=site)
         deposits = sum(r["credit"] for r in rows)
         withdrawals = sum(r["debit"] for r in rows)
+        site_name = Site.objects.filter(pk=site).values_list("name", flat=True).first() if site else ""
         return Response({
             "month": date(year, month, 1).isoformat(),
             "balance": bank_balance(),
+            "site": site,
+            "site_name": site_name or "",
+            "site_balance": bank_balance(site=site) if site else None,
             "bank": bank,
             "deposits": deposits,
             "withdrawals": withdrawals,
@@ -963,6 +1025,8 @@ class BankSummaryView(APIView):
                 "ref": r["tx"].receipt_number or r["tx"].check_number
                 or r["tx"].counterparty_bank or r["tx"].bank or "—",
                 "bank": r["tx"].bank,
+                "site": r["tx"].site_id,
+                "site_name": r["tx"].site.name if r["tx"].site_id else "",
                 "counterparty_bank": r["tx"].counterparty_bank,
                 "person_first_name": r["tx"].person_first_name,
                 "person_last_name": r["tx"].person_last_name,
@@ -1010,7 +1074,7 @@ class DocumentPdfView(APIView):
 
 
 class BankReportPdfView(APIView):
-    """Rapprochement bancaire en PDF, filtrable par banque."""
+    """Rapprochement bancaire en PDF, filtrable par site et par banque."""
 
     permission_classes = [FinanceReadRoles]
 
@@ -1029,6 +1093,8 @@ class BankReportPdfView(APIView):
         except (ValueError, TypeError):
             return Response({"detail": "Mois invalide."}, status=400)
         bank = (request.query_params.get("bank") or "").strip() or None
+        site = requested_site(request)
+        site_name = Site.objects.filter(pk=site).values_list("name", flat=True).first() if site else None
         try:
             fees = int(request.query_params.get("fees") or 0)
         except ValueError:
@@ -1038,10 +1104,10 @@ class BankReportPdfView(APIView):
             statement = int(statement) if statement not in (None, "") else None
         except ValueError:
             statement = None
-        rows = bank_month_rows(year, month, bank=bank)
+        rows = bank_month_rows(year, month, bank=bank, site=site)
         filename, content = pdf_docs.pdf_bank_report(
-            year=year, month=month, bank=bank, rows=rows,
-            balance=bank_balance(),
+            year=year, month=month, bank=bank, site_name=site_name, rows=rows,
+            balance=bank_balance(site=site),
             deposits=sum(r["credit"] for r in rows),
             withdrawals=sum(r["debit"] for r in rows),
             fees=fees, statement=statement)

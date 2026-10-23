@@ -74,12 +74,20 @@ def add_entry(*, day, category, label, direction, amount, created_by=None,
 
 
 def record_payment_entry(payment):
-    """Recette depuis le paiement, jamais saisie libre."""
+    """Recette depuis le paiement, jamais saisie libre.
+
+    Le site est repris de la réservation : sans lui, la recette automatique
+    échapperait au filtre par site de la caisse.
+    """
+    booking = payment.booking
+    site = None
+    if booking is not None and booking.slot_id:
+        site = booking.slot.activity.site
     return add_entry(
         day=payment.paid_at.date() if payment.paid_at else date.today(),
         category="recette_reservation", label=f"Encaissement {payment.reference}",
         direction=CashbookEntry.IN, amount=payment.amount,
-        booking=payment.booking, payment=payment,
+        site=site, booking=booking, payment=payment,
         created_by=payment.received_by,
     )
 
@@ -108,9 +116,16 @@ def close_month(year, month):
 
 # --- Banque (compte distinct de la caisse) -----------------------------------
 
-def bank_balance():
-    """Solde bancaire = versements − retraits (jamais de saisie libre)."""
-    agg = BankTransaction.objects.aggregate(
+def bank_balance(site=None):
+    """Solde bancaire = versements − retraits (jamais de saisie libre).
+
+    Sans site : solde réel du compte unique. Avec site : cumul des
+    mouvements rattachés à ce site (rapport de site).
+    """
+    qs = BankTransaction.objects.all()
+    if site is not None:
+        qs = qs.filter(site_id=site)
+    agg = qs.aggregate(
         dep=Sum("amount", filter=models_Q_bank_in()),
         ret=Sum("amount", filter=models_Q_bank_out()),
     )
@@ -131,7 +146,7 @@ def models_Q_bank_out():
 
 def add_bank_transaction(*, type, day, reason, amount, first_name, last_name,
                          receipt_number="", check_number="", bank="",
-                         counterparty_bank="", created_by=None):
+                         counterparty_bank="", site=None, created_by=None):
     """Versement (bordereau requis), retrait (chèque/réf requis) ou
     virement reçu (sans référence : nom + banques).
 
@@ -173,6 +188,7 @@ def add_bank_transaction(*, type, day, reason, amount, first_name, last_name,
             raise FinanceError("Retrait refusé : solde bancaire deviendrait négatif, alerte direction.")
         tx = BankTransaction.objects.create(
             type=type, date=day, reason=reason, amount=int(amount),
+            site=site,
             person_first_name=first_name, person_last_name=last_name,
             receipt_number=receipt_number, check_number=check_number,
             bank=bank, counterparty_bank=counterparty_bank,
@@ -181,14 +197,17 @@ def add_bank_transaction(*, type, day, reason, amount, first_name, last_name,
         return tx
 
 
-def bank_month_rows(year, month, bank=None):
+def bank_month_rows(year, month, bank=None, site=None):
     """Lignes du mois triées + solde progressif (base = solde antérieur).
 
-    Filtre optionnel par banque BKO (le solde global reste affiché à part).
+    Filtres optionnels par banque BKO et par site ; le solde progressif
+    suit alors le périmètre filtré.
     """
     before_qs = BankTransaction.objects.filter(date__lt=date(year, month, 1))
     if bank:
         before_qs = before_qs.filter(bank=bank)
+    if site is not None:
+        before_qs = before_qs.filter(site_id=site)
     before = before_qs.aggregate(
         dep=Sum("amount", filter=models_Q_bank_in()),
         ret=Sum("amount", filter=models_Q_bank_out()),
@@ -197,6 +216,9 @@ def bank_month_rows(year, month, bank=None):
     qs = BankTransaction.objects.filter(date__year=year, date__month=month)
     if bank:
         qs = qs.filter(bank=bank)
+    if site is not None:
+        qs = qs.filter(site_id=site)
+    qs = qs.select_related("site")
     rows = []
     for tx in qs.order_by("date", "id"):
         credit = tx.amount if tx.type in (BankTransaction.DEPOSIT, BankTransaction.TRANSFER) else 0

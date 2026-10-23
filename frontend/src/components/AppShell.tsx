@@ -24,6 +24,7 @@ export const NAV_SECTIONS: NavSection[] = [
       { to: '/reservations', label: 'Réservations', icon: 'ticket', roles: ['agent', 'responsable', 'admin', 'comptable'] },
       { to: '/clients', label: 'Clients', icon: 'users', roles: ['agent', 'responsable', 'admin'] },
       { to: '/creneaux', label: 'Créneaux', icon: 'clock', roles: ['agent', 'guide', 'responsable', 'admin'] },
+      { to: '/formules', label: 'Formules', icon: 'quad', roles: ['responsable', 'admin'] },
       { to: '/appels', label: 'Appels', icon: 'phone', roles: ['agent', 'responsable', 'admin'] },
       { to: '/synchronisation', label: 'Synchronisation', icon: 'refresh', roles: ALL },
       { to: '/scanner', label: 'Scanner', icon: 'check', roles: ['guide', 'responsable', 'admin'] },
@@ -106,7 +107,8 @@ export default function AppShell({ children, anomalies = 0 }: { children: ReactN
   const [bell, setBell] = useState(false);
   const [offline, setOffline] = useState(!navigator.onLine);
   /* J : nombre de saisies en attente de rejeu (hors ligne). */
-  const { pending } = useSync();
+  const { pending, failed } = useSync(user?.id);
+  const syncCount = pending + failed;
   const menuRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -145,7 +147,8 @@ export default function AppShell({ children, anomalies = 0 }: { children: ReactN
           <div><strong>BKO QUAD</strong><small>Hub agence</small></div>
         </div>
         {NAV_SECTIONS.map((s) => {
-          const items = visibleNav(role, s.items);
+          const items = visibleNav(role, s.items)
+            .filter((i) => i.to !== '/synchronisation' || syncCount > 0);
           if (items.length === 0) return null;
           return (
             <div key={s.title}>
@@ -155,6 +158,7 @@ export default function AppShell({ children, anomalies = 0 }: { children: ReactN
                   <Icon name={i.icon} size={20} />
                   {i.label}
                   {i.to === '/appels' && anomalies > 0 && <span className="count num">{anomalies}</span>}
+                  {i.to === '/synchronisation' && syncCount > 0 && <span className="count num">{syncCount}</span>}
                 </NavLink>
               ))}
             </div>

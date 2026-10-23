@@ -449,8 +449,8 @@ def pdf_facture(booking_id):
     return f"facture-{fnum}.pdf", _render(f"Facture {fnum}", flow)
 
 
-def pdf_bank_report(*, year, month, bank=None, rows, balance, deposits,
-                    withdrawals, fees=0, statement=None):
+def pdf_bank_report(*, year, month, bank=None, site_name=None, rows, balance,
+                    deposits, withdrawals, fees=0, statement=None):
     from reportlab.platypus import Paragraph, Spacer, Table, TableStyle
     from reportlab.lib import colors
 
@@ -459,11 +459,12 @@ def pdf_bank_report(*, year, month, bank=None, rows, balance, deposits,
     company, _ = CompanyProfile.objects.get_or_create(pk=1)
     st = _styles()
     label = f"{month:02d}/{year}"
-    title = "RAPPROCHEMENT BANCAIRE" + (f" — {bank}" if bank else "")
+    scope = " · ".join(x for x in (site_name, bank) if x)
+    title = "RAPPROCHEMENT BANCAIRE" + (f" — {scope}" if scope else "")
     flow = _header_flowables(
         company, title,
         f"Période : {label} · Édité le {bamako_date(datetime.now(BAMAKO))}"
-        + (f" · Banque : {bank}" if bank else " · Toutes banques"))
+        + (f" · {scope}" if scope else " · Toutes banques"))
     data = [["Date", "Type", "Motif", "Réf", "Nom", "Débit", "Crédit", "Solde"]]
     for r in rows:
         tx = r["tx"]
@@ -505,5 +506,6 @@ def pdf_bank_report(*, year, month, bank=None, rows, balance, deposits,
       + ([("Écart à justifier", fcfa(statement - (balance - (fees or 0))))]
          if statement else []), total_last=bool(statement)))
     return f"rapprochement-banque-{year}-{month:02d}" + \
+        (f"-{code_part(site_name, 12)}" if site_name else "") + \
         (f"-{code_part(bank, 12)}" if bank else "") + ".pdf", \
         _render(title, flow)

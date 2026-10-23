@@ -108,6 +108,9 @@ class BankTransaction(models.Model):
     amount = models.PositiveIntegerField(help_text="FCFA, entier")
     date = models.DateField()
     reason = models.CharField(max_length=200)
+    site = models.ForeignKey("catalogue.Site", null=True, blank=True,
+                             on_delete=models.SET_NULL,
+                             related_name="bank_transactions")
     bank = models.CharField(max_length=60, blank=True, default="",
                             help_text="Banque BKO Quad concernée")
     counterparty_bank = models.CharField(max_length=60, blank=True, default="",

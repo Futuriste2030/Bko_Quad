@@ -298,3 +298,79 @@ class SparePartTest(TestCase):
         r = self.client.delete(f"/api/v1/parts/{part.id}/")
         self.assertEqual(r.status_code, 400)
         self.assertTrue(SparePart.objects.filter(pk=part.id).exists())
+
+
+class CatalogueSeedTest(TestCase):
+    """Sites vides : catalogue standard créé au démarrage, jamais écrasé."""
+
+    def test_catalogue_standard_selon_les_regles_du_site(self):
+        from io import StringIO
+
+        from django.core.management import call_command
+
+        orpheus = Site.objects.create(name="Hotel Orpheus", city="Bamako")
+        koni = Site.objects.create(name="Konibabougou", city="Bamako")
+        autre = Site.objects.create(name="Karting 26 Mars", city="Bamako")
+
+        call_command("seed_catalogue", stdout=StringIO())
+
+        orpheus_names = set(orpheus.activities.values_list("name", flat=True))
+        self.assertEqual(orpheus_names, {
+            "Quad enfant 15 min", "Vélo électrique 1H",
+            "Vélo manuel 1H", "Créneau libre",
+        })
+        self.assertNotIn("Quad 1H", orpheus_names)
+
+        koni_names = set(koni.activities.values_list("name", flat=True))
+        self.assertEqual(koni_names, {"Quad 1H", "Créneau libre"})
+
+        autre_names = set(autre.activities.values_list("name", flat=True))
+        self.assertEqual(autre_names, {
+            "Quad 1H", "Vélo électrique 1H",
+            "Vélo manuel 1H", "Créneau libre",
+        })
+        formule = autre.activities.get(name="Quad 1H")
+        self.assertEqual(formule.base_price, 25000)
+        self.assertEqual(formule.duration_minutes, 60)
+
+    def test_relance_idempotente_et_catalogue_existant_intact(self):
+        from io import StringIO
+
+        from django.core.management import call_command
+
+        site = Site.objects.create(name="Konibabougou", city="Bamako")
+        call_command("seed_catalogue", stdout=StringIO())
+        self.assertEqual(site.activities.count(), 2)
+        call_command("seed_catalogue", stdout=StringIO())
+        self.assertEqual(site.activities.count(), 2)
+
+        configure = Site.objects.create(name="Site configuré", city="Bamako")
+        Activity.objects.create(
+            site=configure, name="Formule maison", duration_minutes=30,
+            base_price=7000, deposit=0, max_group=4)
+        call_command("seed_catalogue", stdout=StringIO())
+        self.assertEqual(
+            list(configure.activities.values_list("name", flat=True)),
+            ["Formule maison"])
+
+    def test_formule_utilisee_non_supprimable(self):
+        admin = make_admin()
+        _site, slot = make_site_slot()
+        client = APIClient()
+        client.force_authenticate(user=admin)
+        r = client.delete(f"/api/v1/activities/{slot.activity_id}/")
+        self.assertEqual(r.status_code, 400)
+        self.assertIn("créneaux", str(r.data["detail"]))
+        self.assertTrue(Activity.objects.filter(pk=slot.activity_id).exists())
+
+    def test_formule_vierge_supprimable(self):
+        admin = make_admin()
+        site, _ = make_site_slot()
+        libre = Activity.objects.create(
+            site=site, name="Formule vierge", duration_minutes=30,
+            base_price=1000, deposit=0, max_group=4)
+        client = APIClient()
+        client.force_authenticate(user=admin)
+        r = client.delete(f"/api/v1/activities/{libre.id}/")
+        self.assertEqual(r.status_code, 204)
+        self.assertFalse(Activity.objects.filter(pk=libre.id).exists())

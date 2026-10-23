@@ -5,6 +5,7 @@ import AppShell from '../components/AppShell';
 import { EmptyState, PageHeader } from '../components/ui';
 import Icon from '../lib/icons';
 import { useToast } from '../lib/toast';
+import { useAuth } from '../lib/auth';
 import { useSync } from '../lib/sync';
 import { removeOp, resetOp, type OpKind } from '../lib/offline';
 import { fcfa } from '../lib/format';
@@ -31,7 +32,8 @@ function when(iso: string): string {
 export default function Sync() {
   const link = useSiteLink();
   const { notify } = useToast();
-  const { ops, pending, failed, running, sync } = useSync();
+  const { user } = useAuth();
+  const { ops, pending, failed, running, sync } = useSync(user?.id);
   const [busyId, setBusyId] = useState('');
 
   async function doSync() {

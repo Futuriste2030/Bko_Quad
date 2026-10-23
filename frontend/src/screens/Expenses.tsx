@@ -3,7 +3,7 @@ import AppShell from '../components/AppShell';
 import { EmptyState, Field, PageHeader, SkeletonList } from '../components/ui';
 import Icon from '../lib/icons';
 import { useToast } from '../lib/toast';
-import { createExpense, listEntries, listSites, todayISO, type Entry, type Site } from '../lib/api';
+import { activeSiteId, createExpense, listEntries, listSites, todayISO, type Entry, type Site } from '../lib/api';
 import { fcfa } from '../lib/format';
 
 const CATS = [
@@ -30,7 +30,10 @@ export default function Expenses() {
   const [category, setCategory] = useState('carburant');
   const [label, setLabel] = useState('');
   const [amount, setAmount] = useState('');
-  const [site, setSite] = useState('');
+  const [site, setSite] = useState(() => {
+    const id = activeSiteId();
+    return id ? String(id) : '';
+  });
 
   function load() {
     setLoading(true); setError('');

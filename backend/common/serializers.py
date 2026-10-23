@@ -331,12 +331,17 @@ class CashbookEntrySerializer(serializers.ModelSerializer):
 
 
 class BankTransactionSerializer(serializers.ModelSerializer):
+    site_name = serializers.SerializerMethodField()
+
     class Meta:
         model = BankTransaction
-        fields = ["id", "type", "amount", "date", "reason", "bank", "counterparty_bank",
-                  "receipt_number", "check_number", "person_first_name", "person_last_name",
-                  "locked", "created_at"]
-        read_only_fields = ["locked", "created_at"]
+        fields = ["id", "type", "amount", "date", "reason", "site", "site_name",
+                  "bank", "counterparty_bank", "receipt_number", "check_number",
+                  "person_first_name", "person_last_name", "locked", "created_at"]
+        read_only_fields = ["locked", "created_at", "site_name"]
+
+    def get_site_name(self, o):
+        return o.site.name if o.site_id else ""
 
 
 class UserAdminSerializer(serializers.ModelSerializer):

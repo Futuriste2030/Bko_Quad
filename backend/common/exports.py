@@ -164,6 +164,7 @@ def _bank_row(obj: BankTransaction):
     return [
         _date(obj.date),
         obj.get_type_display(),
+        obj.site.name if obj.site_id else "",
         obj.bank,
         debit,
         credit,
@@ -291,16 +292,17 @@ DATASETS = {
         label="Banque",
         roles=("responsable", "admin", "comptable"),
         columns=(
-            "Date", "Type", "Banque", "Débit (FCFA)", "Crédit (FCFA)",
+            "Date", "Type", "Site", "Banque", "Débit (FCFA)", "Crédit (FCFA)",
             "Motif", "Bordereau", "Chèque / référence",
             "Banque contrepartie", "Personne", "Saisie par", "Créée le",
         ),
         build=lambda start, end: (
             BankTransaction.objects.filter(date__range=(start, end))
-            .select_related("created_by")
+            .select_related("site", "created_by")
             .order_by("date", "id")
         ),
         row=_bank_row,
+        site_lookup="site",
         agent_lookups=("created_by__username", "created_by__first_name",
                        "created_by__last_name"),
     ),

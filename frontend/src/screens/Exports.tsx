@@ -48,7 +48,7 @@ const DATASETS: Dataset[] = [
     label: 'Banque',
     roles: ['responsable', 'admin', 'comptable'],
     detail: 'Versements, retraits et virements reçus, avec bordereau ou référence de chèque.',
-    columns: 12, site: false, activity: false, agent: true,
+    columns: 13, site: true, activity: false, agent: true,
   },
   {
     key: 'factures',

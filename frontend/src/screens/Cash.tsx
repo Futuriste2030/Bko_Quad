@@ -6,7 +6,7 @@ import { EmptyState, Field, PageHeader, Portal, SkeletonList } from '../componen
 import Icon from '../lib/icons';
 import { useAuth } from '../lib/auth';
 import { useToast } from '../lib/toast';
-import { createExpense, listBookings, listEntries, listSites, type Booking, type Entry, type Site } from '../lib/api';
+import { activeSiteId, createExpense, listBookings, listEntries, listSites, type Booking, type Entry, type Site } from '../lib/api';
 import { fcfa } from '../lib/format';
 
 /* Caisse : le livre unique — recettes auto + recettes manuelles (ancien),
@@ -45,7 +45,10 @@ export default function Cash() {
   const [rDate, setRDate] = useState(() => new Date().toISOString().slice(0, 10));
   const [rLabel, setRLabel] = useState('');
   const [rAmount, setRAmount] = useState('');
-  const [rSite, setRSite] = useState('');
+  const [rSite, setRSite] = useState(() => {
+    const id = activeSiteId();
+    return id ? String(id) : '';
+  });
   const [rReceipt, setRReceipt] = useState('');
 
   function load() {

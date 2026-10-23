@@ -12,7 +12,7 @@ export interface SyncState {
   sync: () => Promise<SyncReport | null>;
 }
 
-export function useSync(): SyncState {
+export function useSync(ownerId?: number | null): SyncState {
   const [ops, setOps] = useState<QueuedOp[]>([]);
   const [running, setRunning] = useState(false);
   const runningRef = useRef(false);
@@ -42,10 +42,17 @@ export function useSync(): SyncState {
     }
   }, [reload]);
 
+  /* La file est rattachée au compte qui a créé la saisie : un autre compte
+     sur le même téléphone ne doit ni la voir ni la rejouer. Les anciennes
+     saisies sans propriétaire restent visibles. */
+  const visible = ownerId === undefined || ownerId === null
+    ? ops
+    : ops.filter((o) => o.owner === null || o.owner === undefined || o.owner === ownerId);
+
   return {
-    ops,
-    pending: ops.filter((o) => o.status === 'pending').length,
-    failed: ops.filter((o) => o.status === 'failed').length,
+    ops: visible,
+    pending: visible.filter((o) => o.status === 'pending').length,
+    failed: visible.filter((o) => o.status === 'failed').length,
     running,
     sync,
   };

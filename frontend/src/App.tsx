@@ -25,6 +25,7 @@ import HRContractEditor from './screens/HRContractEditor';
 import HRLetterEditor from './screens/HRLetterEditor';
 import MyDocuments from './screens/MyDocuments';
 import Slots from './screens/Slots';
+import Formules from './screens/Formules';
 import Scanner from './screens/Scanner';
 import Document from './screens/Document';
 import Invoices from './screens/Invoices';
@@ -107,6 +108,7 @@ function ScreenRoutes() {
       <Route path="reservations" element={<Guard roles={['agent', 'responsable', 'admin', 'comptable']}><Reservations /></Guard>} />
       <Route path="reservations/nouvelle" element={<Guard roles={['agent', 'responsable', 'admin']}><NewBooking /></Guard>} />
       <Route path="creneaux" element={<Guard roles={['agent', 'guide', 'responsable', 'admin']}><Slots /></Guard>} />
+      <Route path="formules" element={<Guard roles={['responsable', 'admin']}><Formules /></Guard>} />
       <Route path="clients" element={<Guard roles={['agent', 'responsable', 'admin']}><Clients /></Guard>} />
       <Route path="flotte" element={<Guard roles={['guide', 'responsable', 'admin']}><Fleet /></Guard>} />
       <Route path="maintenance" element={<Guard roles={['responsable', 'admin']}><MaintenanceList /></Guard>} />

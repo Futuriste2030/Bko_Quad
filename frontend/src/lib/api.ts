@@ -10,6 +10,30 @@ import {
 const BASE = '/api/v1';
 const TIMEOUT_MS = 20000;
 
+/* Contexte site de l'URL (/s/2/...). Les rôles de terrain sont de toute
+   façon verrouillés côté serveur ; les profils globaux (direction,
+   superadmin, comptable) utilisent ce segment pour filtrer leurs lectures
+   et rattacher leurs écritures. */
+export function activeSiteId(): number | null {
+  if (typeof window === 'undefined') return null;
+  const match = window.location.pathname.match(/^\/s\/(\d+)(?:\/|$)/);
+  if (!match) return null;
+  const id = Number(match[1]);
+  return Number.isInteger(id) && id > 0 ? id : null;
+}
+
+/* Ajoute `site=` à la requête (lecture et écriture). Exceptions : catalogue
+   des sites (le sélecteur doit lister tout le réseau) et exports (périmètre
+   explicite, certains jeux comme les appels ne sont pas filtrables). */
+function withSite(path: string): string {
+  const site = activeSiteId();
+  if (site === null) return path;
+  if (path.startsWith('/sites/') || path.startsWith('/exports/')) return path;
+  if (path.startsWith('/auth/') || path.startsWith('/company/') || path.startsWith('/version/')) return path;
+  if (/[?&]site=/.test(path)) return path;
+  return `${path}${path.includes('?') ? '&' : '?'}site=${site}`;
+}
+
 export interface Tokens { access: string; refresh: string }
 export interface Me {
   id: number; username: string; first_name: string; last_name: string;
@@ -65,6 +89,7 @@ export class NetworkError extends Error {
 }
 
 async function req(path: string, init: RequestInit = {}, auth = true, retried = false): Promise<Response> {
+  const target = withSite(path);
   /* Multipart (photo d'engin) : le navigateur fixe lui-même le Content-Type. */
   const isForm = init.body instanceof FormData;
   const headers: Record<string, string> = isForm
@@ -75,7 +100,7 @@ async function req(path: string, init: RequestInit = {}, auth = true, retried = 
   const timer = setTimeout(() => ctrl.abort(), TIMEOUT_MS);
   let r: Response;
   try {
-    r = await fetch(`${BASE}${path}`, { ...init, headers, signal: ctrl.signal });
+    r = await fetch(`${BASE}${target}`, { ...init, headers, signal: ctrl.signal });
   } catch {
     throw new NetworkError('Réseau indisponible : la saisie est conservée sur ce téléphone.');
   } finally {
@@ -223,10 +248,12 @@ function hasLocalRef(value: unknown): boolean {
 async function postOrQueue<T>(path: string, body: unknown, q: QueueMeta): Promise<{ data: T | null; queued: boolean }> {
   const key = uuid();
   const headers = { 'Idempotency-Key': key };
+  /* Site figé à la saisie : un rejeu depuis un autre contexte garde le bon. */
+  const target = withSite(path);
   /* Une saisie liée à une autre saisie locale ne peut pas partir seule. */
   if (!hasLocalRef(body)) {
     try {
-      const r = await req(path, { method: 'POST', headers, body: JSON.stringify(body) });
+      const r = await req(target, { method: 'POST', headers, body: JSON.stringify(body) });
       if (r.status === 401) { logout(); throw new Error('Session expirée, reconnectez-vous.'); }
       if (!r.ok) {
         const err = await r.json().catch(() => ({}));
@@ -239,7 +266,7 @@ async function postOrQueue<T>(path: string, body: unknown, q: QueueMeta): Promis
   }
   await enqueueOp({
     id: key,
-    method: 'POST', path, body: q.offlineBody ?? body,
+    method: 'POST', path: target, body: q.offlineBody ?? body,
     kind: q.kind, label: q.label, meta: q.meta, localId: q.localId, owner: currentUserId,
   });
   return { data: null, queued: true };
@@ -436,8 +463,27 @@ export interface Payment {
   amount: number; reference: string; status: string; paid_at: string;
 }
 
-export const listActivities = (): Promise<Activity[]> => list<Activity>('/activities/');
+export interface ActivityInput {
+  site: number; name: string; duration_minutes: number;
+  base_price: number; deposit: number; max_group: number;
+}
+export const listActivities = (site?: number): Promise<Activity[]> =>
+  list<Activity>(site ? `/activities/?site=${site}` : '/activities/');
 export const listSites = (): Promise<Site[]> => list<Site>('/sites/');
+export async function createActivity(input: ActivityInput): Promise<Activity> {
+  return postOne<Activity>('/activities/', input);
+}
+export async function updateActivity(id: number, input: Partial<ActivityInput>): Promise<Activity> {
+  return patchOne<Activity>(`/activities/${id}/`, input);
+}
+export async function deleteActivity(id: number): Promise<void> {
+  const r = await req(`/activities/${id}/`, { method: 'DELETE' });
+  if (r.status === 401) { logout(); throw new Error('Session expirée, reconnectez-vous.'); }
+  if (!r.ok) {
+    const err = await r.json().catch(() => ({}));
+    throw new Error(err.detail ?? 'Suppression impossible (formule utilisée par des créneaux).');
+  }
+}
 
 async function postOne<T>(path: string, body: unknown): Promise<T> {
   const r = await req(path, { method: 'POST', body: JSON.stringify(body) });
@@ -706,11 +752,13 @@ export interface BankRow {
   id: number; date: string; type: BankType; reason: string;
   ref: string; bank: string; counterparty_bank: string;
   person_first_name: string; person_last_name: string;
+  site: number | null; site_name: string;
   debit: number; credit: number; running: number;
 }
 export interface BankSummary {
   month: string; balance: number; bank: string | null; deposits: number; withdrawals: number;
   net: number; rows: BankRow[];
+  site: number | null; site_name: string; site_balance: number | null;
 }
 
 export const listBankTxs = (bank?: string, type?: string): Promise<BankTx[]> =>
@@ -786,7 +834,7 @@ export async function downloadExport(query: ExportQuery, format: ExportFormat): 
 
 /* Téléchargement PDF serveur (reçu, facture, rapport bancaire) : blob + nom. */
 export async function downloadPdf(url: string, filename: string): Promise<void> {
-  const r = await fetch(`/api/v1${url}`, { headers: authHeaders() });
+  const r = await fetch(`/api/v1${withSite(url)}`, { headers: authHeaders() });
   if (r.status === 401) { logout(); throw new Error('Session expirée, reconnectez-vous.'); }
   if (!r.ok) {
     const err = await r.json().catch(() => ({}));

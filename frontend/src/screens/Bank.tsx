@@ -197,7 +197,15 @@ export default function Bank() {
       {!loading && !error && summary && (
         <>
           <div className="kpi-grid">
-            <div className="kpi featured"><span className="kpi-top">Solde bancaire</span><span className="kpi-value num">{fcfa(summary.balance)}</span><span className="kpi-sub">Toutes banques · versements + virements − retraits</span></div>
+            <div className="kpi featured">
+              <span className="kpi-top">Solde bancaire{summary.site_name ? ` · ${summary.site_name}` : ''}</span>
+              <span className="kpi-value num">{fcfa(summary.site != null ? (summary.site_balance ?? 0) : summary.balance)}</span>
+              <span className="kpi-sub">
+                {summary.site != null
+                  ? 'Mouvements du site · versements + virements − retraits'
+                  : 'Toutes banques · versements + virements − retraits'}
+              </span>
+            </div>
             <div className="kpi"><span className="kpi-top">Versements{bankFilter ? ` · ${bankFilter}` : ''}</span><span className="kpi-value num">{fcfa(sumDeposit)}</span></div>
             <div className="kpi"><span className="kpi-top">Virements reçus{bankFilter ? ` · ${bankFilter}` : ''}</span><span className="kpi-value num">{fcfa(sumTransfer)}</span></div>
             <div className="kpi"><span className="kpi-top">Retraits{bankFilter ? ` · ${bankFilter}` : ''}</span><span className="kpi-value num">{fcfa(sumDebit)}</span><span className="kpi-sub">{visible.length} opération(s)</span></div>
@@ -222,6 +230,7 @@ export default function Bank() {
                     <div className="row-meta">
                       <span>{r.person_first_name} {r.person_last_name}</span>
                       <span className="num">{r.bank}</span>
+                      {summary.site == null && r.site_name && <span>{r.site_name}</span>}
                       {r.type === 'transfer' && r.counterparty_bank && <span className="num">← {r.counterparty_bank}</span>}
                       {r.debit > 0 && <span className="num">Débit {fcfa(r.debit)}</span>}
                       {r.credit > 0 && <span className="num">Crédit {fcfa(r.credit)}</span>}

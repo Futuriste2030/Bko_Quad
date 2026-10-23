@@ -90,11 +90,12 @@ class ExportApiTest(TestCase):
         BankTransaction.objects.create(
             type="deposit", date=today, reason="Versement A", amount=50000,
             bank="BDM", person_first_name="Awa", person_last_name="Diarra",
-            receipt_number="BORD-A", created_by=self.comptable)
+            receipt_number="BORD-A", site=self.site_a,
+            created_by=self.comptable)
         BankTransaction.objects.create(
             type="withdrawal", date=today, reason="Retrait B", amount=20000,
             bank="BDM", person_first_name="Moussa", person_last_name="Keita",
-            check_number="CHQ-B", created_by=self.comptable)
+            check_number="CHQ-B", site=self.site_b, created_by=self.comptable)
 
         CallLog.objects.create(
             direction="inbound", phone_number="+22376000001",
@@ -182,6 +183,13 @@ class ExportApiTest(TestCase):
         rows = self._csv_rows(response)
         self.assertEqual([row[1] for row in rows[1:]], ["PAY-A"])
 
+    def test_banque_filtre_par_site(self):
+        response = self._get(self.admin, "banque", site=self.site_a.id)
+        self.assertEqual(response.status_code, 200)
+        rows = self._csv_rows(response)
+        self.assertEqual(rows[0][2], "Site")
+        self.assertEqual([row[2] for row in rows[1:]], ["Orpheus"])
+
     def test_activity_agent_and_calls(self):
         response = self._get(
             self.admin, "reservations", activity=self.act_b.id)
@@ -225,9 +233,6 @@ class ExportApiTest(TestCase):
                      end="2026-10-01").status_code, 400)
         self.assertEqual(
             self._get(self.guide, "reservations").status_code, 403)
-        self.assertEqual(
-            self._get(self.admin, "banque", site=self.site_a.id).status_code,
-            400)
         self.assertEqual(
             self._get(self.admin, "banque", activity=self.act_a.id).status_code,
             400)

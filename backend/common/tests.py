@@ -414,7 +414,9 @@ class SiteFiltrageTest(TestCase):
         resp = self._client(self.resp)
         self.assertEqual(
             [b["code"] for b in resp.get("/api/v1/bookings/").data], ["BQ-ORPH-01"])
-        self.assertEqual([e["amount"] for e in resp.get("/api/v1/entries/").data], [5000])
+        entries = resp.get("/api/v1/entries/").data
+        self.assertEqual({e["amount"] for e in entries}, {5000, 25000})
+        self.assertEqual({e["site"] for e in entries}, {self.site_a.id})
         r = resp.post("/api/v1/finance/expense/", {
             "category": "carburant", "label": "X", "amount": 100,
             "site": self.site_b.id})
@@ -441,3 +443,123 @@ class SiteFiltrageTest(TestCase):
         self.assertEqual(len(admin.get("/api/v1/calls/").data), 2)
         # L'agent voit aussi tous les appels (journal universel).
         self.assertEqual(len(self._client(self.agent).get("/api/v1/calls/").data), 2)
+
+    def test_direction_comptable_filtrent_par_site(self):
+        from accounts.models import User
+        from finance.models import CashbookEntry
+        from payments.services import record_cash_payment
+
+        b_a = self._booking(self.site_a, "BQ-ORPH-10")
+        b_b = self._booking(self.site_b, "BQ-KONI-10")
+        for b in (b_a, b_b):
+            b.status = "confirmed"
+            b.save(update_fields=["status"])
+            record_cash_payment(booking_id=b.id, amount=25000,
+                                nature="balance", received_by=self.admin)
+        CashbookEntry.objects.create(
+            date=timezone.localdate(), category="carburant", voucher="FILTRE-A",
+            label="Carburant A", direction=CashbookEntry.OUT,
+            amount=1000, site=self.site_a)
+        CashbookEntry.objects.create(
+            date=timezone.localdate(), category="carburant", voucher="FILTRE-B",
+            label="Carburant B", direction=CashbookEntry.OUT,
+            amount=2000, site=self.site_b)
+
+        comptable = User.objects.create_user(
+            username="compta", password="pw123456", phone="+22370000002",
+            role="comptable")
+        admin = self._client(self.admin)
+        compta = self._client(comptable)
+        a, b = self.site_a.id, self.site_b.id
+
+        for client in (admin, compta):
+            self.assertEqual(
+                [x["code"] for x in client.get(f"/api/v1/bookings/?site={a}").data],
+                ["BQ-ORPH-10"])
+            self.assertEqual(
+                [x["code"] for x in client.get(f"/api/v1/bookings/?site={b}").data],
+                ["BQ-KONI-10"])
+            self.assertEqual(
+                [x["booking"] for x in client.get(f"/api/v1/payments/?site={a}").data],
+                [b_a.id])
+            self.assertEqual(
+                [x["booking"] for x in client.get(f"/api/v1/invoices/?site={b}").data],
+                [b_b.id])
+            self.assertEqual(
+                {x["site"] for x in client.get(f"/api/v1/entries/?site={a}").data},
+                {a})
+
+        # Les recettes automatiques sont bien rattachées au site de la réservation.
+        self.assertEqual(
+            {x["site"] for x in admin.get(f"/api/v1/entries/?site={b}").data}, {b})
+
+        summary = admin.get(f"/api/v1/finance/month/?site={a}").data
+        self.assertEqual(summary["site"], a)
+        self.assertEqual(summary["inn"], 25000)
+        self.assertEqual(summary["out"], 1000)
+        self.assertEqual(summary["balance"], 24000)
+
+        # Un rôle de terrain ne contourne pas son site via ?site=.
+        self.assertEqual(
+            [x["code"] for x in self._client(self.agent).get(
+                f"/api/v1/bookings/?site={b}").data],
+            ["BQ-ORPH-10"])
+
+        # Écriture manuelle d'un profil global : le site du corps est respecté.
+        r = admin.post("/api/v1/finance/expense/", {
+            "category": "carburant", "label": "Pleine B", "amount": 700,
+            "site": b})
+        self.assertEqual(r.status_code, 201)
+        self.assertEqual(r.data["site"], b)
+
+        # Sans site dans le corps, le site du contexte (?site=) rattache.
+        r = admin.post(f"/api/v1/finance/expense/?site={a}", {
+            "category": "carburant", "label": "Pleine contexte", "amount": 800})
+        self.assertEqual(r.status_code, 201)
+        self.assertEqual(r.data["site"], a)
+
+    def test_banque_filtre_par_site_et_ecriture_rattachee(self):
+        from finance.models import BankTransaction
+        from finance.services import add_bank_transaction
+
+        a, b = self.site_a.id, self.site_b.id
+        for site, amount, ref in ((self.site_a, 5000, "BV-A"), (self.site_b, 9000, "BV-B")):
+            add_bank_transaction(
+                type=BankTransaction.DEPOSIT, day=timezone.localdate(),
+                reason=f"Versement {site.name}", amount=amount,
+                first_name="Client", last_name="Test", receipt_number=ref,
+                bank="BIM", site=site, created_by=self.admin)
+
+        admin = self._client(self.admin)
+        self.assertEqual(
+            {x["site"] for x in admin.get(f"/api/v1/bank-transactions/?site={a}").data},
+            {a})
+        month = timezone.localdate()
+        summary = admin.get(
+            f"/api/v1/bank/summary/?year={month.year}&month={month.month}&site={a}").data
+        self.assertEqual(summary["site"], a)
+        self.assertEqual({x["site"] for x in summary["rows"]}, {a})
+        self.assertEqual(summary["deposits"], 5000)
+        self.assertEqual(summary["site_balance"], 5000)
+        self.assertEqual(summary["balance"], 14000)
+
+        # Le responsable du site A reste verrouillé sur A, même en écrivant.
+        resp = self._client(self.resp)
+        self.assertEqual(
+            {x["site"] for x in resp.get(
+                f"/api/v1/bank-transactions/?site={b}").data},
+            {a})
+        r = resp.post("/api/v1/bank/deposit/", {
+            "reason": "Versement A", "amount": 1000, "bank": "BIM",
+            "person_first_name": "Client", "person_last_name": "A",
+            "receipt_number": "BV-RA", "site": b})
+        self.assertEqual(r.status_code, 201)
+        self.assertEqual(r.data["site"], a)
+
+        # Profil global : le site du contexte (?site=) rattache l'écriture.
+        r = admin.post(f"/api/v1/bank/deposit/?site={b}", {
+            "reason": "Versement B", "amount": 2000, "bank": "BIM",
+            "person_first_name": "Client", "person_last_name": "B",
+            "receipt_number": "BV-CONTEXTE"})
+        self.assertEqual(r.status_code, 201)
+        self.assertEqual(r.data["site"], b)

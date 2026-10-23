@@ -328,3 +328,35 @@ Objectif : pilote propre, argent tracé, sauvegardes avant la première vente r�
 - VPS : à préparer (IP 192.168.1.5 = réseau local, pas un domaine public).
 - Agrégateur de paiement : adaptateur en attente de doc (H) — stub idempotent
   conserve les paiements espèces en attendant.
+
+## Journal 22-23/10 — Filtrage par site (direction/comptable) + banque par site
+- API : `requested_site()` lit `?site=` pour direction/superadmin/comptable
+  (les rôles de terrain restent verrouillés sur leur site, quel que soit le
+  paramètre). `SiteScopeMixin` l'utilise pour les lectures ; les écritures
+  caisse/banque prennent le site du corps ou du contexte `?site=`.
+- Banque : `BankTransaction.site` (migration 0005 + backfill des recettes de
+  caisse), solde du site (`site_balance`), filtre site sur la liste, le résumé,
+  le PDF de rapprochement et l'export (colonne « Site », 13 colonnes).
+- Caisse : les recettes automatiques d'un encaissement sont rattachées au site
+  de la réservation (elles n'échappent plus au filtre).
+- Front : `activeSiteId()` / `withSite()` ajoutent `site=` aux lectures ET aux
+  écritures ; le site est figé dans la file hors ligne au moment de la saisie ;
+  PDF avec contexte site ; Banque affiche le solde du site ; exports banque
+  filtrables ; formulaires caisse/dépenses préremplis sur le site courant.
+- Tests : 147/147 OK ; `makemigrations --check` propre ; build prod PWA OK.
+
+## Journal 23/10 — Formules en prod, synchro et clôture
+- Formules : nouvel écran `/formules` (création, modification, suppression)
+  réservé responsable/admin, avec sélection du site et tarifs en FCFA.
+- Catalogue : `seed_catalogue` + `catalogue/services.py`. Au démarrage du
+  conteneur web, tout site sans aucune formule reçoit le catalogue standard
+  (Orpheus : enfants + vélos ; Konibabougou : quads ; autres : quads + vélos ;
+  plus « Créneau libre »). Un catalogue existant n'est jamais modifié.
+- Suppression d'une formule utilisée par des créneaux : refus 400 explicite
+  (conservation de l'historique).
+- Synchro : la rubrique `/synchronisation` n'apparaît plus que s'il reste des
+  saisies en attente ou refusées (barre latérale + menu), avec un badge de
+  compte ; le rejeu automatique reste inchangé.
+- Clôture : commande `verifier_cloture` (état des dernières clôtures +
+  rattrapage) et test de la planification Celery beat (20h, rattrapage 3h).
+- Tests : 178/178 OK ; build PWA OK ; `makemigrations --check` propre.
