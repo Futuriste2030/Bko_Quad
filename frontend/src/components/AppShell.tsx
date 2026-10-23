@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { Link, NavLink, useLocation, useNavigate } from 'react-router-dom';
+import { listSites, type Site } from '../lib/api';
 import { ROLE_LABELS, useAuth, type Role } from '../lib/auth';
 import { useAvatar } from '../lib/avatar';
 import Icon, { type IconName } from '../lib/icons';
@@ -105,11 +106,15 @@ export default function AppShell({ children, anomalies = 0 }: { children: ReactN
   const toSite = (p: string) => (p === '/' ? base : link(p));
   const [menu, setMenu] = useState(false);
   const [bell, setBell] = useState(false);
+  const [siteMenu, setSiteMenu] = useState(false);
+  const [sites, setSites] = useState<Site[]>([]);
   const [offline, setOffline] = useState(!navigator.onLine);
   /* J : nombre de saisies en attente de rejeu (hors ligne). */
   const { pending, failed } = useSync(user?.id);
   const syncCount = pending + failed;
   const menuRef = useRef<HTMLDivElement>(null);
+  const siteRef = useRef<HTMLDivElement>(null);
+  const canSwitchSite = role === 'admin' || role === 'superadmin' || role === 'comptable';
 
   useEffect(() => {
     const on = () => setOffline(!navigator.onLine);
@@ -118,11 +123,25 @@ export default function AppShell({ children, anomalies = 0 }: { children: ReactN
     return () => { window.removeEventListener('online', on); window.removeEventListener('offline', on); };
   }, []);
 
-  useEffect(() => { setMenu(false); setBell(false); }, [loc.pathname]);
+  useEffect(() => { setMenu(false); setBell(false); setSiteMenu(false); }, [loc.pathname]);
 
   useEffect(() => {
-    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') setMenu(false); };
-    const onClick = (e: MouseEvent) => { if (menuRef.current && !menuRef.current.contains(e.target as Node)) setMenu(false); };
+    if (!canSwitchSite) return;
+    let alive = true;
+    listSites()
+      .then((s) => { if (alive) setSites(s); })
+      .catch(() => undefined);
+    return () => { alive = false; };
+  }, [canSwitchSite]);
+
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') { setMenu(false); setSiteMenu(false); }
+    };
+    const onClick = (e: MouseEvent) => {
+      if (menuRef.current && !menuRef.current.contains(e.target as Node)) setMenu(false);
+      if (siteRef.current && !siteRef.current.contains(e.target as Node)) setSiteMenu(false);
+    };
     window.addEventListener('keydown', onKey);
     window.addEventListener('mousedown', onClick);
     return () => { window.removeEventListener('keydown', onKey); window.removeEventListener('mousedown', onClick); };
@@ -137,6 +156,17 @@ export default function AppShell({ children, anomalies = 0 }: { children: ReactN
     setMenu(false);
     nav('/connexion');
   }
+
+  function switchSite(seg: string) {
+    setSiteMenu(false);
+    if (seg === base.slice(3)) return;
+    const rest = loc.pathname.replace(/^\/s\/[^/]+/, '') || '';
+    nav(`/s/${seg}${rest}${loc.search}`);
+  }
+
+  const siteLabel = base === '/s/reseau'
+    ? 'Tout le réseau'
+    : (sites.find((s) => String(s.id) === base.slice(3))?.name || user?.site_name || `Site ${base.slice(3)}`);
 
   return (
     <div className="shell">
@@ -175,11 +205,41 @@ export default function AppShell({ children, anomalies = 0 }: { children: ReactN
           <img src="/android-chrome-192x192.png" alt="" aria-hidden="true" />
           <div><strong>BKO QUAD</strong></div>
         </div>
-        {/* Site du contexte URL : nom réel pour un compte de terrain, réseau sinon. */}
-        <span className="badge badge-confirmed" title="Site affiché (définit côté serveur par votre compte)">
-          <Icon name={base === '/s/reseau' ? 'chart' : 'calendar'} size={14} />
-          {base === '/s/reseau' ? 'Tout le réseau' : (user?.site_name || `Site ${base.slice(3)}`)}
-        </span>
+        {canSwitchSite ? (
+          <div ref={siteRef} style={{ position: 'relative' }}>
+            <button type="button" className="badge badge-confirmed" aria-haspopup="menu" aria-expanded={siteMenu}
+              title="Choisir le site à afficher" onClick={() => setSiteMenu((v) => !v)}
+              style={{ font: 'inherit', cursor: 'pointer' }}>
+              <Icon name={base === '/s/reseau' ? 'chart' : 'calendar'} size={14} />
+              {siteLabel}
+              <Icon name="chevD" size={14} />
+            </button>
+            {siteMenu && (
+              <div className="menu" role="menu" aria-label="Choisir le site à afficher"
+                style={{ position: 'absolute', top: 'calc(100% + 6px)', left: 0, right: 'auto', minWidth: 260, zIndex: 60 }}>
+                <div style={{ padding: '8px 12px' }}><strong>Filtrer par site</strong></div>
+                <hr />
+                <button type="button" role="menuitem" onClick={() => switchSite('reseau')}>
+                  <Icon name="chart" size={18} />Tout le réseau
+                  {base === '/s/reseau' && <Icon name="check" size={18} style={{ marginLeft: 'auto' }} />}
+                </button>
+                {sites.map((s) => (
+                  <button key={s.id} type="button" role="menuitem" onClick={() => switchSite(String(s.id))}>
+                    <Icon name="calendar" size={18} />
+                    <span>{s.name}{s.city ? <span className="small muted"> · {s.city}</span> : null}</span>
+                    {base === `/s/${s.id}` && <Icon name="check" size={18} style={{ marginLeft: 'auto' }} />}
+                  </button>
+                ))}
+                {sites.length === 0 && <div className="small muted" style={{ padding: '8px 12px' }}>Aucun site disponible.</div>}
+              </div>
+            )}
+          </div>
+        ) : (
+          <span className="badge badge-confirmed" title="Site attribué à votre compte">
+            <Icon name={base === '/s/reseau' ? 'chart' : 'calendar'} size={14} />
+            {siteLabel}
+          </span>
+        )}
         <div className="topbar-spacer" />
         <div className="topbar-actions">
           <ThemeSwitch compact />

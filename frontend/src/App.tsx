@@ -101,8 +101,9 @@ function SiteTree({ children }: { children: JSX.Element }) {
 
 /* Écrans applicatifs relatifs au site courant (item "" = accueil). */
 function ScreenRoutes() {
+  const { seg } = useParams();
   return (
-    <Routes>
+    <Routes key={seg}>
       <Route index element={<Guard><Dashboard /></Guard>} />
       <Route path="calendrier" element={<Guard roles={['agent', 'guide', 'responsable', 'admin']}><Calendar /></Guard>} />
       <Route path="reservations" element={<Guard roles={['agent', 'responsable', 'admin', 'comptable']}><Reservations /></Guard>} />

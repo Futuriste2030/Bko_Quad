@@ -1,6 +1,6 @@
 /* Icônes Lucide (lucide-react), trait 2px, 24px. Même API partout. */
 import {
-  Bell, Bike, Calendar, Check, ChevronRight, ClipboardCheck, Clock, Car, Bus, Motorbike, Truck,
+  Bell, Bike, Calendar, Check, ChevronDown, ChevronRight, ClipboardCheck, Clock, Car, Bus, Motorbike, Truck,
   Download, FileText, Home, Info, LogOut, Menu, Moon, Phone, Plus, RefreshCw,
   ScanLine,
   Search, Send, Settings, Sun, Ticket, ChartColumn, User, Users,
@@ -12,7 +12,7 @@ export type IconName =
   | 'home' | 'calendar' | 'ticket' | 'phone' | 'cash' | 'close'
   | 'users' | 'settings' | 'user' | 'logout' | 'sun' | 'moon'
   | 'plus' | 'search' | 'bell' | 'check' | 'alert' | 'info'
-  | 'clock' | 'wallet' | 'chart' | 'x' | 'chevR' | 'send'
+  | 'clock' | 'wallet' | 'chart' | 'x' | 'chevR' | 'chevD' | 'send'
   | 'refresh' | 'file' | 'menu' | 'quad' | 'scan' | 'download'
   | 'moto' | 'velo' | 'bus' | 'car' | 'truck';
 
@@ -40,6 +40,7 @@ const MAP: Record<IconName, LucideIcon> = {
   chart: ChartColumn,
   x: X,
   chevR: ChevronRight,
+  chevD: ChevronDown,
   send: Send,
   refresh: RefreshCw,
   file: FileText,
