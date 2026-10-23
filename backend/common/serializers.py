@@ -100,15 +100,23 @@ class BookingSerializer(serializers.ModelSerializer):
     lines = BookingLineSerializer(many=True, read_only=True)
     vehicle_plates = serializers.SerializerMethodField()
     discount_total = serializers.SerializerMethodField()
+    site = serializers.SerializerMethodField()
+    site_name = serializers.SerializerMethodField()
 
     class Meta:
         model = Booking
-        fields = ["id", "code", "customer", "slot", "persons", "quads", "resource_type",
-                  "unit_price", "units", "total", "deposit_due", "status", "source",
-                  "expires_at", "qr_token", "cancel_reason", "lines", "vehicle_plates",
-                  "discount_total", "offline_at"]
+        fields = ["id", "code", "customer", "slot", "site", "site_name", "persons", "quads",
+                  "resource_type", "unit_price", "units", "total", "deposit_due", "status",
+                  "source", "expires_at", "qr_token", "cancel_reason", "lines",
+                  "vehicle_plates", "discount_total", "offline_at"]
         read_only_fields = ["code", "resource_type", "unit_price", "units", "total",
                             "deposit_due", "status", "expires_at", "qr_token"]
+
+    def get_site(self, o):
+        return o.slot.activity.site_id
+
+    def get_site_name(self, o):
+        return o.slot.activity.site.name
 
     def get_vehicle_plates(self, o):
         return [v.plate for v in o.vehicles.all().order_by("plate")]
@@ -458,10 +466,16 @@ class CompanySerializer(serializers.ModelSerializer):
 
 
 class NoticeSerializer(serializers.ModelSerializer):
+    site_name = serializers.SerializerMethodField()
+
     class Meta:
         model = Notice
-        fields = ["id", "type", "title", "content", "status", "published_at", "created_at", "created_by"]
-        read_only_fields = ["published_at", "created_by"]
+        fields = ["id", "type", "title", "content", "site", "site_name", "status",
+                  "published_at", "created_at", "created_by"]
+        read_only_fields = ["site_name", "published_at", "created_by"]
+
+    def get_site_name(self, o):
+        return o.site.name if o.site_id else ""
 
 
 class TrackedLineSerializer(serializers.ModelSerializer):

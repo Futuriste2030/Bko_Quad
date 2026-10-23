@@ -2,6 +2,7 @@
 
 from datetime import date
 
+from django.db import IntegrityError, transaction
 from django.db.models import Q, Sum
 from django.utils import timezone
 from rest_framework import mixins, status, viewsets
@@ -189,6 +190,31 @@ class CustomerViewSet(viewsets.ModelViewSet):
         return qs.filter(
             Q(site_id=site) | Q(bookings__slot__activity__site_id=site)).distinct()
 
+    def create(self, request, *args, **kwargs):
+        """Client idempotent par telephone : un doublon renvoie la fiche existante.
+
+        Un client est partage entre les sites (son `site` est indicatif) : un
+        agent qui ressaisit un numero deja connu recupere l'identifiant sans
+        ecraser la fiche ni son rattachement.
+        """
+        phone = str(request.data.get("phone") or "").strip()
+        if phone:
+            existing = Customer.objects.select_related("site").filter(phone=phone).first()
+            if existing is not None:
+                return Response(self.get_serializer(existing).data, status=status.HTTP_200_OK)
+        serializer = self.get_serializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        try:
+            with transaction.atomic():
+                self.perform_create(serializer)
+        except IntegrityError:
+            existing = Customer.objects.select_related("site").filter(phone=phone).first()
+            if existing is None:
+                raise
+            return Response(self.get_serializer(existing).data, status=status.HTTP_200_OK)
+        headers = self.get_success_headers(serializer.data)
+        return Response(serializer.data, status=status.HTTP_201_CREATED, headers=headers)
+
     def perform_create(self, serializer):
         site = scoped_site(self.request.user)
         if site is not None:
@@ -337,7 +363,9 @@ class SlotViewSet(SiteScopeMixin, CatalogueViewSetMixin, viewsets.ModelViewSet):
 
 
 class BookingViewSet(SiteScopeMixin, viewsets.ModelViewSet):
-    queryset = Booking.objects.all().order_by("-created_at")
+    queryset = (Booking.objects.all()
+                .select_related("customer", "slot__activity__site")
+                .order_by("-created_at"))
     serializer_class = BookingSerializer
     site_lookup = "slot__activity__site"
     http_method_names = ["get", "post", "head", "options"]
@@ -1302,7 +1330,7 @@ class CompanyView(APIView):
 
 
 class NoticeViewSet(viewsets.ModelViewSet):
-    queryset = Notice.objects.all()
+    queryset = Notice.objects.select_related("site")
     serializer_class = NoticeSerializer
     http_method_names = ["get", "post", "patch", "head", "options"]
 
@@ -1311,8 +1339,29 @@ class NoticeViewSet(viewsets.ModelViewSet):
             return [IsAuthenticated()]
         return [ManagerRoles()]
 
+    def get_queryset(self):
+        qs = super().get_queryset()
+        site = requested_site(self.request)
+        if site is None:
+            return qs
+        return qs.filter(Q(site_id=site) | Q(site__isnull=True))
+
     def perform_create(self, serializer):
-        serializer.save(created_by=self.request.user)
+        site = scoped_site(self.request.user)
+        site_obj = serializer.validated_data.get("site")
+        site_id = site or (site_obj.pk if site_obj is not None else requested_site(self.request))
+        serializer.save(created_by=self.request.user, site_id=site_id)
+
+    def perform_update(self, serializer):
+        site = scoped_site(self.request.user)
+        if site is None:
+            serializer.save()
+            return
+        serializer.validated_data.pop("site", None)
+        if serializer.instance.site_id is not None:
+            serializer.save(site_id=site)
+        else:
+            serializer.save()
 
     @action(detail=True, methods=["post"])
     def publish(self, request, pk=None):
@@ -1384,7 +1433,11 @@ class HRDocumentViewSetMixin:
     model = None
 
     def get_queryset(self):
-        return hr_document_queryset(self.request.user, self.model)
+        qs = hr_document_queryset(self.request.user, self.model)
+        site = requested_site(self.request)
+        if site is not None:
+            qs = qs.filter(Q(employee__site_id=site) | Q(employee__site__isnull=True))
+        return qs
 
     def _fresh(self, document):
         # Les signatures viennent d'être créées : le prefetch de get_object()

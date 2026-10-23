@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import AppShell from '../components/AppShell';
 import { CompanyFooter, CompanyHeader } from '../components/CompanyDoc';
+import SiteFilter from '../components/SiteFilter';
 import { EmptyState, Field, PageHeader, SkeletonList } from '../components/ui';
 import Icon from '../lib/icons';
 import { useAuth } from '../lib/auth';
@@ -168,6 +169,9 @@ export default function Communication() {
         sub="Communiqués de la boîte et lettres officielles, à l’en-tête de l’entreprise."
         actions={mayWrite ? <button type="button" className="btn btn-accent" onClick={() => setOpen(true)}><Icon name="plus" size={18} />Rédiger</button> : undefined}
       />
+      <div className="card no-print">
+        <SiteFilter hint="Affiche les documents du site et du réseau ; la rédaction suit le site actif." />
+      </div>
       <div className="segmented no-print" role="group" aria-label="Type de document">
         <button type="button" className="chip" aria-pressed={tab === 'communique'} onClick={() => setTab('communique')}>Communiqués</button>
         <button type="button" className="chip" aria-pressed={tab === 'lettre'} onClick={() => setTab('lettre')}>Lettres officielles</button>
@@ -186,6 +190,9 @@ export default function Communication() {
                 <span className={`badge ${n.status === 'published' ? 'badge-confirmed' : 'badge-expired'}`}>
                   {n.status === 'published' ? 'Publié' : 'Brouillon'}
                 </span>
+              </div>
+              <div className="row-meta">
+                <span>{n.site_name || 'Tout le réseau'}</span>
               </div>
               <div className="btn-row">
                 <button type="button" className="btn btn-sm btn-ghost" onClick={() => setView(n)}>Lire</button>

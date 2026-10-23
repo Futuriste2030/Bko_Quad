@@ -39,6 +39,10 @@ class Notice(models.Model):
     type = models.CharField(max_length=15, choices=TYPE_CHOICES, default="communique")
     title = models.CharField(max_length=200)
     content = models.TextField(help_text="Contenu mis en forme (HTML simple)")
+    site = models.ForeignKey(
+        "catalogue.Site", null=True, blank=True, on_delete=models.SET_NULL,
+        related_name="notices",
+        help_text="Site concerné ; vide = tout le réseau.")
     status = models.CharField(max_length=10, choices=STATUS_CHOICES, default="draft")
     published_at = models.DateTimeField(null=True, blank=True)
     created_at = models.DateTimeField(auto_now_add=True)

@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { useSiteLink } from '../lib/sitepath';
 import AppShell from '../components/AppShell';
+import SiteFilter from '../components/SiteFilter';
 import { EmptyState, Field, PageHeader, Portal, SkeletonList } from '../components/ui';
 import Icon from '../lib/icons';
 import { useAuth } from '../lib/auth';
@@ -127,6 +128,7 @@ export default function Cash() {
               <button key={x.v} type="button" className="chip" aria-pressed={f === x.v} onClick={() => setF(x.v)}>{x.label}</button>
             ))}
           </div>
+          <SiteFilter />
         </div>
       </div>
       {loading && <SkeletonList n={3} />}

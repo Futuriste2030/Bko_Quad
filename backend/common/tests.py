@@ -542,6 +542,33 @@ class SiteFiltrageTest(TestCase):
         self.assertEqual(r.status_code, 201, r.content[:300])
         self.assertEqual(r.data["site"], self.site_a.id)
 
+    def test_client_idempotent_par_telephone_multi_site(self):
+        from clients.models import Customer
+
+        existing = Customer.objects.create(
+            name="Client B", phone="+22376000102", whatsapp="+22376000102",
+            site=self.site_b)
+        agent = self._client(self.agent)
+        r = agent.post("/api/v1/customers/", {
+            "name": "Autre saisie", "phone": "+22376000102",
+            "site": self.site_a.id}, format="json")
+        self.assertEqual(r.status_code, 200, r.content[:300])
+        self.assertEqual(r.data["id"], existing.id)
+        self.assertEqual(r.data["name"], "Client B")
+        self.assertEqual(r.data["site"], self.site_b.id)
+        existing.refresh_from_db()
+        self.assertEqual(existing.name, "Client B")
+        self.assertEqual(existing.whatsapp, "+22376000102")
+        self.assertEqual(existing.site_id, self.site_b.id)
+        self.assertEqual(Customer.objects.filter(phone="+22376000102").count(), 1)
+
+    def test_booking_expose_site_et_nom_site(self):
+        b = self._booking(self.site_a, "BQ-SITE-01")
+        agent = self._client(self.agent)
+        row = next(x for x in agent.get("/api/v1/bookings/").data if x["id"] == b.id)
+        self.assertEqual(row["site"], self.site_a.id)
+        self.assertEqual(row["site_name"], self.site_a.name)
+
     def test_disponibilite_flotte_par_creneau(self):
         self._booking(self.site_a, "BQ-DISPO-01")
         agent = self._client(self.agent)

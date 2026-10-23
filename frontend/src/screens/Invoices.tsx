@@ -3,6 +3,7 @@ import { Link } from 'react-router-dom';
 import { useSiteLink } from '../lib/sitepath';
 import AppShell from '../components/AppShell';
 import StatusBadge from '../components/StatusBadge';
+import SiteFilter from '../components/SiteFilter';
 import { EmptyState, Field, PageHeader, SkeletonList } from '../components/ui';
 import Icon from '../lib/icons';
 import { useToast } from '../lib/toast';
@@ -85,9 +86,12 @@ export default function Invoices() {
     <AppShell>
       <PageHeader title="Factures" sub="Facture à numéro unique, encaissement espèces tracé, reçu et facture avec QR." />
       <div className="card">
-        <div className="search">
-          <Icon name="search" size={18} />
-          <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Rechercher code ou client…" aria-label="Rechercher une facture" />
+        <div className="form-2">
+          <div className="search">
+            <Icon name="search" size={18} />
+            <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Rechercher code ou client…" aria-label="Rechercher une facture" />
+          </div>
+          <SiteFilter />
         </div>
       </div>
       {loading && <SkeletonList n={4} />}

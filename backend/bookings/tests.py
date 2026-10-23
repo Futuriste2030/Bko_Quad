@@ -129,10 +129,15 @@ class BookingTest(TestCase):
                                start=s25.start, end=s25.end)["free"], 2)
         b26 = book("Client 3", "+22371000003", s26_15.id, 2)
         self.assertEqual(b26.resource_type, "quad")
+        # 2 + 4 = 6 quads : le groupe suivant tient exactement dans la flotte.
+        book("Client 4", "+22371000004", s26_15.id, 4)
+        self.assertEqual(
+            fleet_availability(site=site, resource_type="quad",
+                               start=s26_15.start, end=s26_15.end)["free"], 0)
         with self.assertRaisesRegex(BookingError, "Flotte insuffisante"):
-            book("Client 4", "+22371000004", s26_15.id, 5)
-        book("Client 5", "+22371000005", s26_10.id, 1)
-        self.assertEqual(Booking.objects.filter(status=Booking.PENDING_DEPOSIT).count(), 4)
+            book("Client 5", "+22371000005", s26_15.id, 1)
+        book("Client 6", "+22371000006", s26_10.id, 1)
+        self.assertEqual(Booking.objects.filter(status=Booking.PENDING_DEPOSIT).count(), 5)
 
     def test_velos_consomment_la_flotte_velo_uniquement(self):
         cust, slot, agent = make_setup(fleet=False)

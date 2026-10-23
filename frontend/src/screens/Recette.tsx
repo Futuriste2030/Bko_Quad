@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import AppShell from '../components/AppShell';
 import { CompanyFooter, CompanyHeader } from '../components/CompanyDoc';
+import SiteFilter from '../components/SiteFilter';
 import { EmptyState, Field, PageHeader, SkeletonList } from '../components/ui';
 import Icon from '../lib/icons';
 import { listBookings, listEntries, monthSummary, type Booking, type Entry, type MonthSummary } from '../lib/api';
@@ -54,9 +55,12 @@ export default function Recette() {
         actions={<button type="button" className="btn btn-ghost no-print" onClick={() => window.print()}><Icon name="file" size={18} />Imprimer</button>}
       />
       <div className="card form no-print">
-        <Field label="Mois" htmlFor="rec-month">
-          <input id="rec-month" type="month" value={month} onChange={(e) => e.target.value && setMonth(e.target.value)} />
-        </Field>
+        <div className="form-2">
+          <Field label="Mois" htmlFor="rec-month">
+            <input id="rec-month" type="month" value={month} onChange={(e) => e.target.value && setMonth(e.target.value)} />
+          </Field>
+          <SiteFilter />
+        </div>
       </div>
       {loading && <SkeletonList n={3} />}
       {error && <div className="alert-error" role="alert">{error}</div>}

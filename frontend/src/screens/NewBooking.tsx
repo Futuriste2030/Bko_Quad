@@ -7,7 +7,7 @@ import { Field, IconButton, PageHeader } from '../components/ui';
 import Icon from '../lib/icons';
 import { useToast } from '../lib/toast';
 import {
-  clearDraft, createBooking, createCustomer, createSlot, getAvailability,
+  activeSiteId, clearDraft, createBooking, createCustomer, createSlot, getAvailability,
   listActivities, listBookings, listCalls, listCustomers, listSites, listSlots, listVehicles,
   loadDraft, logMessage, samePhone, saveDraft,
   type Activity, type Booking, type CallItem, type Customer, type FleetAvailability,
@@ -104,12 +104,15 @@ export default function NewBooking() {
       .then(([c, s, b, a, si, cl, v]) => {
         setCustomers(c); setSlots(s); setBookings(b);
         setActivities(a); setSites(si); setCalls(cl); setVehicles(v);
-        if (si.length > 0) setSiteId((prev) => prev || String(si[0].id));
+        const locked = activeSiteId();
+        if (si.length > 0) {
+          setSiteId((prev) => prev || (locked ? String(locked) : String(si[0].id)));
+        }
         const pre = params.get('slot');
         if (pre) {
           const sl = s.find((x) => x.id === Number(pre));
           const act = a.find((x) => x.id === sl?.activity);
-          if (act) setSiteId(String(act.site));
+          if (act && !locked) setSiteId(String(act.site));
         }
       })
       .catch((e: Error) => setError(e.message));
@@ -139,6 +142,10 @@ export default function NewBooking() {
      Hôtel Orpheus : quads enfants et vélos (pas de quad adulte).
      Konibabougou : quads uniquement (ni vélo électrique, ni vélo manuel).
      Les autres sites : quads adultes et vélos, pas de quads enfants. */
+  const lockedSite = activeSiteId();
+  const siteOptions = useMemo(
+    () => (lockedSite ? sites.filter((s) => s.id === lockedSite) : sites),
+    [sites, lockedSite]);
   const siteActs = useMemo(() => activities
     .filter((a) => !siteId || String(a.site) === siteId)
     .sort((x, y) => x.base_price - y.base_price), [activities, siteId]);
@@ -412,9 +419,11 @@ export default function NewBooking() {
             </div>
           )}
           <div className="form-2">
-            <Field label="Site de réservation" required htmlFor="nb-site">
-              <select id="nb-site" value={siteId} onChange={(e) => { setSiteId(e.target.value); setSlotId(null); setFormuleId(''); setCustomSlot(false); }}>
-                {sites.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
+            <Field label="Site de réservation" required htmlFor="nb-site"
+              hint={lockedSite ? 'Site actif imposé par le contexte.' : undefined}>
+              <select id="nb-site" value={siteId} disabled={!!lockedSite}
+                onChange={(e) => { setSiteId(e.target.value); setSlotId(null); setFormuleId(''); setCustomSlot(false); }}>
+                {siteOptions.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
               </select>
             </Field>
             <Field label="Formule" required htmlFor="nb-formule" hint={orpheusSite ? 'Orpheus : quads enfants et vélos (pas de quad adulte).' : koniSite ? undefined : 'Quads adultes et vélos — quads enfants uniquement à l’Hôtel Orpheus.'}>

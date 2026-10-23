@@ -45,6 +45,7 @@ export interface BookingLine {
 }
 export interface Booking {
   id: number; code: string; customer: number; slot: number;
+  site?: number; site_name?: string;
   persons: number; quads: number; resource_type?: 'quad' | 'velo';
   unit_price: number; total: number;
   deposit_due: number; status: string; source: string;
@@ -633,6 +634,7 @@ export interface Company {
 }
 export interface Notice {
   id: number; type: 'communique' | 'lettre'; title: string; content: string;
+  site?: number | null; site_name?: string;
   status: 'draft' | 'published'; published_at: string | null; created_at: string; created_by: number | null;
 }
 

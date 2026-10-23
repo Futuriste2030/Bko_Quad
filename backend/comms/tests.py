@@ -96,3 +96,47 @@ class NoticeTest(TestCase):
         self.assertEqual(client.get("/api/v1/notices/").status_code, 200)
         self.assertEqual(client.post("/api/v1/notices/", {
             "type": "lettre", "title": "X", "content": "Y"}).status_code, 403)
+
+    def test_notices_filtrees_par_site_et_reseau(self):
+        from rest_framework.test import APIClient
+
+        site_a = Site.objects.create(name="Site A", city="Bamako")
+        site_b = Site.objects.create(name="Site B", city="Bamako")
+        agent_a = User.objects.create_user(
+            username="agentA", password="x", phone="+22370000011",
+            role="agent", site=site_a)
+        client = APIClient()
+        client.force_authenticate(user=self.admin)
+        notice_a = client.post(f"/api/v1/notices/?site={site_a.id}", {
+            "type": "communique", "title": "Site A",
+            "content": "<p>A</p>"})
+        notice_b = client.post(f"/api/v1/notices/?site={site_b.id}", {
+            "type": "communique", "title": "Site B",
+            "content": "<p>B</p>"})
+        network = client.post("/api/v1/notices/", {
+            "type": "communique", "title": "Reseau",
+            "content": "<p>Reseau</p>"})
+        self.assertEqual(notice_a.status_code, 201, notice_a.content[:300])
+        self.assertEqual(notice_a.data["site"], site_a.id)
+        self.assertEqual(notice_a.data["site_name"], site_a.name)
+        self.assertIsNone(network.data["site"])
+
+        reader = APIClient()
+        reader.force_authenticate(user=agent_a)
+        self.assertEqual(
+            {n["id"] for n in reader.get("/api/v1/notices/").data},
+            {notice_a.data["id"], network.data["id"]})
+        self.assertEqual(
+            {n["id"] for n in client.get(
+                f"/api/v1/notices/?site={site_b.id}").data},
+            {notice_b.data["id"], network.data["id"]})
+
+        manager = User.objects.create_user(
+            username="respA", password="x", phone="+22370000012",
+            role="responsable", site=site_a)
+        writer = APIClient()
+        writer.force_authenticate(user=manager)
+        patched = writer.patch(f"/api/v1/notices/{network.data['id']}/", {
+            "content": "<p>Reseau corrige</p>"})
+        self.assertEqual(patched.status_code, 200, patched.content[:300])
+        self.assertIsNone(patched.data["site"])

@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import AppShell from '../components/AppShell';
+import SiteFilter from '../components/SiteFilter';
 import { EmptyState, Field, PageHeader, SkeletonList } from '../components/ui';
 import Icon from '../lib/icons';
 import { useToast } from '../lib/toast';
@@ -88,6 +89,7 @@ export default function Expenses() {
               <button key={v} type="button" className="chip" aria-pressed={f === v} onClick={() => setF(v)}>{l}</button>
             ))}
           </div>
+          <SiteFilter />
         </div>
         <p className="small muted" style={{ marginTop: 8 }}>Les recettes automatiques des réservations vivent dans la Caisse, pas ici.</p>
       </div>

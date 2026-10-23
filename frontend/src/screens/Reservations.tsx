@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { useSiteLink } from '../lib/sitepath';
 import AppShell from '../components/AppShell';
+import SiteFilter from '../components/SiteFilter';
 import StatusBadge from '../components/StatusBadge';
 import { ConfirmDialog, EmptyState, IconButton, PageHeader, SkeletonList } from '../components/ui';
 import { useToast } from '../lib/toast';
@@ -153,6 +154,7 @@ export default function Reservations() {
               <button key={x.v} type="button" className="chip" aria-pressed={f === x.v} onClick={() => setF(x.v)}>{x.label}</button>
             ))}
           </div>
+          <SiteFilter />
         </div>
       </div>
 
@@ -215,6 +217,9 @@ export default function Reservations() {
                   <strong className="num">{fcfa(b.total)}</strong>
                   <span className="small muted num">Reste dû : {fcfa(Math.max(0, b.total - b.deposit_due))}</span>
                 </div>
+                <div className="row-meta">
+                  <span>Site : {b.site_name || '-'}</span>
+                </div>
                 {b.status === 'checked_in' && (() => {
                   const r = rideOf(b);
                   if (!r) return null;
@@ -271,7 +276,7 @@ export default function Reservations() {
           </div>
           <div className="table-wrap only-desktop">
             <table className="table">
-              <thead><tr><th>Code</th><th>Créneau</th><th>Personnes</th><th>Total</th><th>Reste dû</th><th>Statut</th><th>Actions</th></tr></thead>
+              <thead><tr><th>Code</th><th>Créneau</th><th>Personnes</th><th>Total</th><th>Reste dû</th><th>Site</th><th>Statut</th><th>Actions</th></tr></thead>
               <tbody>
                 {rows.map((b) => (
                   <tr key={b.id}>
@@ -280,6 +285,7 @@ export default function Reservations() {
                     <td className="num">{b.persons} Â· {b.quads} {resourceNoun(b)}</td>
                     <td className="num">{fcfa(b.total)}</td>
                     <td className="num">{fcfa(Math.max(0, b.total - b.deposit_due))}</td>
+                    <td>{b.site_name || '-'}</td>
                     <td><StatusBadge status={b.status} /></td>
                     <td>
                       {b.status === 'confirmed' && (

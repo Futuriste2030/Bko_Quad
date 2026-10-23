@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import AppShell from '../components/AppShell';
+import SiteFilter from '../components/SiteFilter';
 import { ConfirmDialog, EmptyState, Field, PageHeader, Portal, SkeletonList } from '../components/ui';
 import Icon, { type IconName } from '../lib/icons';
 import { useAuth } from '../lib/auth';
@@ -231,6 +232,10 @@ export default function HR() {
             ? <button type="button" className="btn btn-primary" onClick={newLetter}><Icon name="plus" size={18} />Nouveau courrier</button>
             : <button type="button" className="btn btn-primary" onClick={() => openEmployee()}><Icon name="plus" size={18} />Nouveau salarié</button>}
       />
+
+      <div className="card">
+        <SiteFilter hint="Filtre les salariés et documents RH du site." />
+      </div>
 
       <div className="segmented" role="tablist" aria-label="Rubriques RH">
         <button type="button" role="tab" className="chip" aria-pressed={tab === 'contracts'} onClick={() => setTab('contracts')}>
