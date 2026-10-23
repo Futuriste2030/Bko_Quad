@@ -346,11 +346,13 @@ def _order_rows(ctx):
         rows.append(("Durée réservée", f"{duree} = {units} × {unit_label}"))
     lines = list(booking.lines.all())
     suffix = f"· {duree}" if units == 1 else f"· {units} × {unit_label}"
+    velo = getattr(booking, "resource_type", "quad") == "velo"
+    engin = "vélo" if velo else "quad"
     if lines:
         for line in lines:
-            quads_pl = "s" if line.quads > 1 else ""
+            engins_pl = "s" if line.quads > 1 else ""
             rows.append((f"Ligne {line.rank} — {line.persons} pers., "
-                         f"{line.quads} quad{quads_pl} {suffix}",
+                         f"{line.quads} {engin}{engins_pl} {suffix}",
                          fcfa(line.line_total)))
             if line.discount:
                 rows.append((f"Remise ligne {line.rank} (manuelle)",
@@ -360,6 +362,11 @@ def _order_rows(ctx):
         kids = "kid" in name or "enfant" in name
         if kids:
             rows.append((f"Commande — {booking.quads} quad enfant, "
+                         f"{booking.persons} personne(s) {suffix}",
+                         f"{booking.persons} × {fcfa(booking.unit_price)}"
+                         + (f" × {units}" if units > 1 else "")))
+        elif velo:
+            rows.append((f"Commande — {booking.quads} vélo(s), "
                          f"{booking.persons} personne(s) {suffix}",
                          f"{booking.persons} × {fcfa(booking.unit_price)}"
                          + (f" × {units}" if units > 1 else "")))

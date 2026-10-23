@@ -15,7 +15,9 @@ from rest_framework_simplejwt.views import TokenObtainPairView
 from accounts.models import User
 from accounts.totp import otpauth_url, random_secret, verify as totp_verify
 from bookings.models import Booking, BookingEvent
-from bookings.services import BookingError, create_booking, transition
+from bookings.services import (
+    BookingError, create_booking, fleet_availability, is_velo_activity, transition,
+)
 from catalogue.models import Activity, Maintenance, Site, Slot, SparePart, Vehicle
 from clients.models import Customer
 from comms.models import Message, Notice
@@ -175,9 +177,35 @@ class VersionView(APIView):
 
 
 class CustomerViewSet(viewsets.ModelViewSet):
-    queryset = Customer.objects.all()
+    queryset = Customer.objects.all().select_related("site").order_by("name")
     serializer_class = CustomerSerializer
     permission_classes = [AgentRoles]
+
+    def get_queryset(self):
+        qs = super().get_queryset()
+        site = requested_site(self.request)
+        if site is None:
+            return qs
+        return qs.filter(
+            Q(site_id=site) | Q(bookings__slot__activity__site_id=site)).distinct()
+
+    def perform_create(self, serializer):
+        site = scoped_site(self.request.user)
+        if site is not None:
+            serializer.save(site_id=site)
+            return
+        context_site = requested_site(self.request)
+        if context_site is not None and not serializer.validated_data.get("site"):
+            serializer.save(site_id=context_site)
+            return
+        serializer.save()
+
+    def perform_update(self, serializer):
+        site = scoped_site(self.request.user)
+        if site is not None:
+            serializer.save(site_id=site)
+            return
+        serializer.save()
 
 
 RESTRICTED_SITE_ROLES = ("agent", "guide", "responsable")
@@ -189,7 +217,8 @@ def scoped_site(user):
 
     Renvoie l'id du site si l'utilisateur est de ces roles et qu'un site
     lui est affecte ; None sinon (admin, comptable, ou sans site). Le
-    journal d'appels et les clients restent universels par convention.
+    journal d'appels est filtre par le site de l'appel ; les clients
+    restent universels par convention.
     """
     if not getattr(user, "is_authenticated", False):
         return None
@@ -320,8 +349,37 @@ class BookingViewSet(SiteScopeMixin, viewsets.ModelViewSet):
             return [GuideRoles()]
         return [IsAuthenticated()]
 
-    def create(self, request, *args, **kwargs):
+    @action(detail=False, methods=["get"])
+    def availability(self, request):
+        slot = (Slot.objects.select_related("activity__site")
+                .filter(pk=request.query_params.get("slot")).first())
+        if slot is None:
+            return Response({"detail": "Créneau invalide."}, status=400)
         site = scoped_site(request.user)
+        if site is not None and slot.activity.site_id != site:
+            return Response({"detail": "Créneau hors de votre site."}, status=403)
+        context_site = requested_site(request)
+        if context_site is not None and slot.activity.site_id != context_site:
+            return Response({"detail": "Créneau hors du site demandé."}, status=403)
+        pricing = slot.activity
+        activity_id = request.query_params.get("activity")
+        if activity_id:
+            pricing = Activity.objects.filter(pk=activity_id).first()
+            if pricing is None or pricing.site_id != slot.activity.site_id:
+                return Response({"detail": "Formule hors du site du créneau."}, status=400)
+        resource_type = (
+            Booking.RESOURCE_VELO if is_velo_activity(pricing.name)
+            else Booking.RESOURCE_QUAD)
+        data = fleet_availability(
+            site=slot.activity.site, resource_type=resource_type,
+            start=slot.start, end=slot.end)
+        return Response({
+            "slot": slot.id, "resource_type": resource_type,
+            "total": data["total"], "used": data["used"], "free": data["free"],
+        })
+
+    def create(self, request, *args, **kwargs):
+        site = requested_site(request)
         if site is not None:
             slot = Slot.objects.filter(pk=request.data.get("slot"),
                                        activity__site_id=site).first()
@@ -600,14 +658,17 @@ class MessageViewSet(mixins.CreateModelMixin, mixins.ListModelMixin,
         return Response({**MessageSerializer(msg).data, "wa_me": wa_link}, status=201)
 
 
-class CallLogViewSet(mixins.ListModelMixin, mixins.RetrieveModelMixin, viewsets.GenericViewSet):
-    queryset = CallLog.objects.all()
+class CallLogViewSet(SiteScopeMixin, mixins.ListModelMixin, mixins.RetrieveModelMixin,
+                     viewsets.GenericViewSet):
+    queryset = CallLog.objects.select_related("line", "site", "imported_by")
     serializer_class = CallLogSerializer
     permission_classes = [AgentRoles]
+    site_lookup = "site"
 
     @action(detail=True, methods=["post"])
     def reconcile(self, request, pk=None):
-        booking, anomaly = reconcile_call(pk)
+        call = self.get_object()
+        booking, anomaly = reconcile_call(call.id)
         return Response({
             "booking": BookingSerializer(booking).data if booking else None,
             "anomaly": CallAnomalySerializer(anomaly).data if anomaly else None,
@@ -626,12 +687,20 @@ class CallLogViewSet(mixins.ListModelMixin, mixins.RetrieveModelMixin, viewsets.
         raw_calls = request.data.get("calls", [])
         if not isinstance(raw_calls, list) or len(raw_calls) > 500:
             return Response({"detail": "Lot invalide (liste, 500 max)."}, status=400)
-        line = TrackedLine.objects.filter(pk=line_id, active=True).first()
+        line = TrackedLine.objects.select_related("site").filter(
+            pk=line_id, active=True).first()
         if line is None:
             return Response({"detail": "Ligne d'entreprise requise (line_id actif)."}, status=400)
         if not line.collect_enabled:
             return Response({"detail": "Collecte désactivée pour cette ligne (voir Paramètres)."},
                             status=403)
+        user_site = scoped_site(request.user)
+        if getattr(request.user, "role", None) in RESTRICTED_SITE_ROLES and not user_site:
+            return Response(
+                {"detail": "Compte sans site : affectez un site avant d'importer des appels."},
+                status=403)
+        if line.site_id and user_site and line.site_id != user_site:
+            return Response({"detail": "Ligne hors de votre site."}, status=403)
         entries = []
         for c in raw_calls:
             started = c.get("started_at")
@@ -641,24 +710,38 @@ class CallLogViewSet(mixins.ListModelMixin, mixins.RetrieveModelMixin, viewsets.
             if entries[-1]["started_at"] is None:
                 return Response({"detail": "started_at ISO requis."}, status=400)
         try:
-            created, skipped, updated, fresh = import_calls(entries, line=line)
+            created, skipped, updated, fresh = import_calls(
+                entries, line=line,
+                site=request.user.site if user_site else None,
+                imported_by=request.user)
         except TelephonyError as e:
             return Response({"detail": str(e)}, status=400)
         line.refresh_from_db()
+        if created or updated:
+            from audit.services import log_action
+
+            log_action(
+                actor=request.user, action="call.import", entity=f"line:{line.id}",
+                after={"created": created, "updated": updated, "skipped": skipped,
+                       "site": line.site_id or user_site})
         return Response({"created": created, "skipped": skipped, "updated": updated,
                          "fresh": fresh, "last_sync": line.last_sync},
                         status=201)
 
 
-class AnomalyViewSet(mixins.ListModelMixin, mixins.RetrieveModelMixin, viewsets.GenericViewSet):
-    queryset = CallAnomaly.objects.all()
+class AnomalyViewSet(SiteScopeMixin, mixins.ListModelMixin, mixins.RetrieveModelMixin,
+                     viewsets.GenericViewSet):
+    queryset = CallAnomaly.objects.select_related("call", "call__line", "call__site",
+                                                  "resolved_by")
     serializer_class = CallAnomalySerializer
     permission_classes = [ManagerRoles]
+    site_lookup = "call__site"
 
     @action(detail=True, methods=["post"])
     def resolve(self, request, pk=None):
+        anomaly = self.get_object()
         try:
-            anomaly = resolve_anomaly(pk, request.data.get("reason", ""),
+            anomaly = resolve_anomaly(anomaly.id, request.data.get("reason", ""),
                                       resolved_by=request.user,
                                       comment=request.data.get("comment", ""))
         except TelephonyError as e:
@@ -666,16 +749,32 @@ class AnomalyViewSet(mixins.ListModelMixin, mixins.RetrieveModelMixin, viewsets.
         return Response(CallAnomalySerializer(anomaly).data)
 
 
-class TrackedLineViewSet(viewsets.ModelViewSet):
+class TrackedLineViewSet(SiteScopeMixin, viewsets.ModelViewSet):
     """Numéros d'entreprise suivis : lecture agence, gestion responsable/admin."""
-    queryset = TrackedLine.objects.all().order_by("label")
+    queryset = TrackedLine.objects.select_related("site").order_by("label")
     serializer_class = TrackedLineSerializer
     http_method_names = ["get", "post", "patch", "head", "options"]
+    site_lookup = "site"
 
     def get_permissions(self):
         if self.action in ("list", "retrieve"):
             return [AgentRoles()]
         return [ManagerRoles()]
+
+    def perform_create(self, serializer):
+        line = serializer.save()
+        from audit.services import log_action
+
+        log_action(actor=self.request.user, action="line.create",
+                   entity=f"line:{line.id}",
+                   after={"label": line.label, "site": line.site_id})
+
+    def perform_update(self, serializer):
+        own_site = scoped_site(self.request.user)
+        new_site = serializer.validated_data.get("site", serializer.instance.site)
+        if own_site is not None and new_site is not None and new_site.id != own_site:
+            raise PermissionDenied("Ligne hors de votre site.")
+        serializer.save()
 
 
 class ClosingView(APIView):
@@ -1115,10 +1214,10 @@ class BankReportPdfView(APIView):
                             filename=filename, content_type="application/pdf")
 
 
-class UserViewSet(viewsets.ModelViewSet):
+class UserViewSet(SiteScopeMixin, viewsets.ModelViewSet):
     """Comptes du système : réservés au super administrateur."""
 
-    queryset = User.objects.all().order_by("username")
+    queryset = User.objects.all().select_related("site").order_by("username")
     serializer_class = UserAdminSerializer
     permission_classes = [SuperAdminRoles]
     http_method_names = ["get", "post", "patch", "head", "options"]

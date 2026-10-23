@@ -7,10 +7,11 @@ import { Field, IconButton, PageHeader } from '../components/ui';
 import Icon from '../lib/icons';
 import { useToast } from '../lib/toast';
 import {
-  clearDraft, createBooking, createCustomer, createSlot,
+  clearDraft, createBooking, createCustomer, createSlot, getAvailability,
   listActivities, listBookings, listCalls, listCustomers, listSites, listSlots, listVehicles,
   loadDraft, logMessage, samePhone, saveDraft,
-  type Activity, type Booking, type CallItem, type Customer, type Site, type Slot, type Vehicle,
+  type Activity, type Booking, type CallItem, type Customer, type FleetAvailability,
+  type Site, type Slot, type Vehicle,
 } from '../lib/api';
 import { fcfa, fmtSlot, norm } from '../lib/format';
 
@@ -90,6 +91,7 @@ export default function NewBooking() {
   const [cStart, setCStart] = useState('09:00');
   const [cEnd, setCEnd] = useState('10:00');
   const [cCap, setCCap] = useState('10');
+  const [fleet, setFleet] = useState<FleetAvailability | null>(null);
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
 
@@ -172,6 +174,16 @@ export default function NewBooking() {
   /* Sans heure proposée, le formulaire libre s'affiche directement. */
   const showCustom = customSlot || !hasSlots;
   const chosenPlates = (chosenSlot?.vehicles ?? []).map((id) => vehicles.find((v) => v.id === id)?.plate ?? '').filter(Boolean);
+
+  useEffect(() => {
+    setFleet(null);
+    if (!slotId) return;
+    let cancelled = false;
+    getAvailability(slotId, formule?.id)
+      .then((data) => { if (!cancelled) setFleet(data); })
+      .catch(() => { if (!cancelled) setFleet(null); });
+    return () => { cancelled = true; };
+  }, [slotId, formule?.id]);
   const slotInfo = (s: Slot) => {
     const act = activities.find((a) => a.id === s.activity);
     const t = new Date(s.start).toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' });
@@ -433,6 +445,18 @@ export default function NewBooking() {
                 const left = chosenSlot.capacity - (used.get(chosenSlot.id) ?? 0);
                 return <p className="small num">Heure choisie : {slotInfo(chosenSlot)} — {left} place{left > 1 ? 's' : ''} restante{left > 1 ? 's' : ''} sur {chosenSlot.capacity}</p>;
               })()}
+              {fleet && fleet.free === 0 && (
+                <div className="banner banner-warning" role="alert">
+                  <Icon name="alert" size={20} />
+                  <div><strong>Flotte indisponible sur ce créneau.</strong>
+                    <div className="small">Aucun {fleet.resource_type === 'velo' ? 'vélo' : 'quad'} libre sur {fleet.total} en service. Choisissez un autre créneau.</div></div>
+                </div>
+              )}
+              {fleet && fleet.free > 0 && (
+                <p className="small num" role="status">
+                  Flotte : {fleet.free} {fleet.resource_type === 'velo' ? 'vélo' : 'quad'}{fleet.free > 1 ? 's' : ''} libre{fleet.free > 1 ? 's' : ''} sur {fleet.total} en service.
+                </p>
+              )}
             </>
           )}
           {hasSlots && (
@@ -483,8 +507,14 @@ export default function NewBooking() {
             ) : (
               <div className="small num">25 000 FCFA par quad pour 1 personne seule · 30 000 FCFA si 2 personnes partagent le même quad (majoration +{PRICE_DUO_EXTRA.toLocaleString('fr-FR')} FCFA) — Total : {fcfa(previewTotal)} pour {totP} pers. et {totQ} quad{totQ > 1 ? 's' : ''}.</div>
             )}
-            {chosenPlates.length > 0 && <div className="small num">Quads affectés (n°) : {chosenPlates.join(', ')}</div>}</div>
+            {chosenPlates.length > 0 && <div className="small num">Engins prévus sur le créneau (indicatif) : {chosenPlates.join(', ')}</div>}</div>
           </div>
+          {fleet && totQ > fleet.free && (
+            <div className="alert-error" role="alert">
+              <Icon name="alert" size={18} />
+              Flotte insuffisante : {totQ} {fleet.resource_type === 'velo' ? 'vélos' : 'quads'} demandés, {fleet.free} libre{fleet.free > 1 ? 's' : ''} sur ce créneau.
+            </div>
+          )}
           <Field label="Groupe : répartir les personnes en lignes" htmlFor="nb-group" hint={soloLine ? 'Enfant / vélo : 1 personne par engin — la répartition crée une ligne par personne.' : 'Ex. groupe de 30 : la répartition crée 15 lignes de 2 pers. / 1 quad, ajustez ensuite avec +.'}>
             <div className="line-split">
               <input id="nb-group" inputMode="numeric" value={groupSize} onChange={(e) => setGroupSize(e.target.value)} placeholder="Ex. 30" aria-label="Nombre total de personnes du groupe" />

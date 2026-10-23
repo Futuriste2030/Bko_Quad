@@ -217,6 +217,10 @@ BKO_BOOKING_EXPIRY_MINUTES = int(os.environ.get("BKO_BOOKING_EXPIRY_MINUTES", "2
 BKO_REFUND_POLICY = os.environ.get("BKO_REFUND_POLICY", "manual")
 BKO_WHATSAPP_BUSINESS_NUMBER = os.environ.get("BKO_WHATSAPP_BUSINESS_NUMBER", "+22300000000")
 
+# Disponibilité flotte : 1 = limite dure (défaut), 0 = affectation documentaire
+# temporaire pendant l'inventaire de la flotte (chaque saisie est tracée).
+BKO_FLEET_STRICT = os.environ.get("BKO_FLEET_STRICT", "1") == "1"
+
 # Clôture de journée automatique : les activités se terminent en journée,
 # le Hub clôt tout seul à 20h00 (fuseau B) — aucune validation manuelle.
 BKO_CLOSING_HOUR = int(os.environ.get("BKO_CLOSING_HOUR", "20"))

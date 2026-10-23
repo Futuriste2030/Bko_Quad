@@ -85,6 +85,7 @@ export default function Clients() {
               <div className="row-meta">
                 <span className="num">{fmtPhone(c.phone)}</span>
                 {c.whatsapp && <span className="num">WhatsApp : {fmtPhone(c.whatsapp)}</span>}
+                {c.site_name && <span>Site : {c.site_name}</span>}
               </div>
               <div className="btn-row">
                 <Link to={link(`/reservations/nouvelle?phone=${encodeURIComponent(c.phone)}`)} className="btn btn-sm btn-accent">

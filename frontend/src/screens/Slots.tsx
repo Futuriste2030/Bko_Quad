@@ -106,7 +106,7 @@ export default function Slots() {
     setBusy(true);
     try {
       await updateSlotVehicles(assign.id, picked);
-      notify('success', 'Quads affectés', 'Hors service exclus automatiquement par le serveur.');
+      notify('success', 'Engins prévus enregistrés', 'Indicatif : la disponibilité réelle est vérifiée à la réservation.');
       setAssign(null);
       load();
     } catch (e) { notify('error', 'Affectation impossible', e instanceof Error ? e.message : ''); }
@@ -150,7 +150,7 @@ export default function Slots() {
                       </div>
                       <div className="small muted">{actName(s.activity)}</div>
                       {platesOf(s).length > 0 && (
-                        <div className="small num">Quads : {platesOf(s).join(', ')}</div>
+                        <div className="small num">Engins prévus (indicatif) : {platesOf(s).join(', ')}</div>
                       )}
                       <div className="row-meta"><span className="num">{used} inscrits · {left} restantes</span></div>
                       <div style={{ height: 6, borderRadius: 4, background: 'var(--surface-2)' }}>
@@ -162,7 +162,7 @@ export default function Slots() {
                         )}
                         {mayCreate && (
                           <button type="button" className="btn btn-sm btn-ghost" onClick={() => { setAssign(s); setPicked(s.vehicles ?? []); }}>
-                            Quads ({(s.vehicles ?? []).length})
+                            Engins ({(s.vehicles ?? []).length})
                           </button>
                         )}
                         {mayCreate && !everBooked(s.id) && (
@@ -191,9 +191,9 @@ export default function Slots() {
       )}
       {assign && (
         <div className="modal-backdrop" onClick={() => !busy && setAssign(null)}>
-          <div className="modal form" role="dialog" aria-modal="true" aria-label="Quads du créneau" onClick={(e) => e.stopPropagation()}>
-            <h2>Quads du créneau</h2>
-            <p className="small muted">Seuls les engins en service du même site sont proposés.</p>
+          <div className="modal form" role="dialog" aria-modal="true" aria-label="Engins prévus sur le créneau" onClick={(e) => e.stopPropagation()}>
+            <h2>Engins prévus sur le créneau</h2>
+            <p className="small muted">Indicatif : seuls les engins en service du même site sont proposés. La disponibilité réelle est vérifiée à chaque réservation.</p>
             <div className="slot-list">
               {assignChoices.map((v) => (
                 <label key={v.id} className="slot" aria-checked={picked.includes(v.id)}>
@@ -201,12 +201,12 @@ export default function Slots() {
                   <span><strong className="num">{v.plate}</strong><br /><small>{v.model}{v.color ? ` Â· ${v.color}` : ''}</small></span>
                 </label>
               ))}
-              {assignChoices.length === 0 && <p>Aucun quad en service sur ce site. Voyez la Flotte.</p>}
+              {assignChoices.length === 0 && <p>Aucun engin en service sur ce site. Voyez la Flotte.</p>}
             </div>
             <div className="modal-actions">
               <button type="button" className="btn btn-ghost" onClick={() => setAssign(null)} disabled={busy}>Revenir</button>
               <button type="button" className="btn btn-primary" onClick={saveQuads} disabled={busy}>
-                {busy && <span className="caret" aria-hidden="true" />}Affecter ({picked.length})
+                {busy && <span className="caret" aria-hidden="true" />}Enregistrer ({picked.length})
               </button>
             </div>
           </div>

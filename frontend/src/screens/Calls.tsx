@@ -5,7 +5,7 @@ import AppShell from '../components/AppShell';
 import { ConfirmDialog, EmptyState, Field, PageHeader, SkeletonList } from '../components/ui';
 import Icon from '../lib/icons';
 import { useToast } from '../lib/toast';
-import { listAnomalies, listCalls, createLine, listLines, reconcileCall, resolveAnomaly, toggleLine, type Anomaly, type CallItem, type TrackedLine } from '../lib/api';
+import { activeSiteId, listAnomalies, listCalls, createLine, listLines, listSites, reconcileCall, resolveAnomaly, toggleLine, type Anomaly, type CallItem, type Site, type TrackedLine } from '../lib/api';
 import { useAuth } from '../lib/auth';
 import { fmtDirection, fmtPhone, fmtSlot } from '../lib/format';
 
@@ -18,13 +18,16 @@ const REASONS = [
 
 export default function Calls() {
   const link = useSiteLink();
-  const { can } = useAuth();
+  const { can, user } = useAuth();
   const [calls, setCalls] = useState<CallItem[]>([]);
   const [anoms, setAnoms] = useState<Anomaly[]>([]);
   const [lines, setLines] = useState<TrackedLine[]>([]);
+  const [sites, setSites] = useState<Site[]>([]);
   const [lineLabel, setLineLabel] = useState('');
   const [lineNumber, setLineNumber] = useState('');
+  const [lineSite, setLineSite] = useState('');
   const mayLines = can('responsable', 'admin');
+  const needsSite = mayLines && !user?.site;
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [reason, setReason] = useState('renseignement');
@@ -35,8 +38,17 @@ export default function Calls() {
 
   function load(silent = false) {
   if (!silent) { setLoading(true); setError(''); }
-    Promise.all([listCalls(), listAnomalies().catch(() => [] as Anomaly[]), listLines().catch(() => [] as TrackedLine[])])
-      .then(([c, a, l]) => { setCalls(c); setAnoms(a); setLines(l); setUpdatedAt(new Date()); if (!silent) setError(''); })
+    Promise.all([
+      listCalls(),
+      listAnomalies().catch(() => [] as Anomaly[]),
+      listLines().catch(() => [] as TrackedLine[]),
+      listSites().catch(() => [] as Site[]),
+    ])
+      .then(([c, a, l, s]) => {
+        setCalls(c); setAnoms(a); setLines(l); setSites(s);
+        setLineSite((cur) => cur || (user?.site ? String(user.site) : (activeSiteId() ? String(activeSiteId()) : '')));
+        setUpdatedAt(new Date()); if (!silent) setError('');
+      })
       .catch((e: Error) => { if (!silent) setError(e.message); })
       .finally(() => { if (!silent) setLoading(false); });
   }
@@ -55,9 +67,15 @@ export default function Calls() {
   notify('warning', 'Libellé et numéro requis', 'Ex. Ligne Business, +22320201212.');
       return;
     }
+    const siteId = user?.site ?? (lineSite ? Number(lineSite) : null);
+    if (!siteId) {
+      notify('warning', 'Site requis', 'Choisissez le site de cette ligne d’entreprise.');
+      return;
+    }
     try {
-      const l = await createLine({ label: lineLabel.trim(), number: lineNumber.trim() });
-      notify('success', 'Ligne suivie', `${l.label} (${l.number}).`);
+      const l = await createLine({
+        label: lineLabel.trim(), number: lineNumber.trim(), site: siteId });
+      notify('success', 'Ligne suivie', `${l.label} (${l.number}) - ${l.site_name || 'site non rattaché'}.`);
       setLineLabel(''); setLineNumber('');
       load();
     } catch (e) { notify('error', 'Ajout impossible', e instanceof Error ? e.message : ''); }
@@ -125,6 +143,14 @@ export default function Calls() {
           <div className="form-2" style={{ marginTop: 8 }}>
             <Field label="Libellé" htmlFor="line-label"><input id="line-label" value={lineLabel} onChange={(e) => setLineLabel(e.target.value)} placeholder="Ex. Ligne Business" /></Field>
             <Field label="Numéro international" htmlFor="line-number"><input id="line-number" type="tel" value={lineNumber} onChange={(e) => setLineNumber(e.target.value)} placeholder="+223…" /></Field>
+            {needsSite && (
+              <Field label="Site de la ligne" required htmlFor="line-site" hint="Les appels seront rattachés à ce site.">
+                <select id="line-site" value={lineSite} onChange={(e) => setLineSite(e.target.value)}>
+                  <option value="">-</option>
+                  {sites.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
+                </select>
+              </Field>
+            )}
           </div>
         )}
         {mayLines && (
@@ -158,6 +184,11 @@ export default function Calls() {
                     : <span className="badge badge-completed"><Icon name="check" size={14} />Ã€ rapprocher</span>}
                 </div>
                 <div className="row-meta"><span className="num">{fmtSlot(c.started_at)}</span><span className="num">{c.duration_seconds} s</span><span>{fmtDirection(c.direction)}</span></div>
+                <div className="small muted">
+                  {c.line_label ? `Ligne ${c.line_label}` : 'Ligne non rattachée'}
+                  {c.site_name ? ` · ${c.site_name}` : ' · site non rattaché'}
+                  {c.imported_by_name ? ` · importé par ${c.imported_by_name}` : ''}
+                </div>
                 <div className="btn-row">
                   <button type="button" className="btn btn-sm" onClick={() => reconcile(c.id)} disabled={busy}>
                     <Icon name="refresh" size={16} />Rapprocher

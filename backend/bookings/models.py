@@ -41,6 +41,15 @@ class Booking(models.Model):
     slot = models.ForeignKey("catalogue.Slot", on_delete=models.PROTECT, related_name="bookings")
     persons = models.PositiveIntegerField()
     quads = models.PositiveIntegerField(default=1)
+    RESOURCE_QUAD = "quad"
+    RESOURCE_VELO = "velo"
+    RESOURCE_CHOICES = [
+        (RESOURCE_QUAD, "Quad"),
+        (RESOURCE_VELO, "Vélo"),
+    ]
+    resource_type = models.CharField(
+        max_length=10, choices=RESOURCE_CHOICES, default=RESOURCE_QUAD,
+        help_text="Type d'engins mobilisés par la réservation")
     unit_price = models.PositiveIntegerField(help_text="FCFA, entier")
     total = models.PositiveIntegerField(help_text="FCFA, entier")
     # H : unité de facturation. Créneau de 2 h sur la formule « Quad 1H »

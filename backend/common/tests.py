@@ -4,6 +4,7 @@ from django.conf import settings
 from django.test import TestCase
 from django.utils import timezone
 
+from catalogue.testing import add_fleet
 from common.models import InvoiceSequence, next_invoice_number
 
 
@@ -41,6 +42,7 @@ class ApiRolesTest(TestCase):
             site=site, name="Quad 1h", duration_minutes=60,
             base_price=20000, deposit=10000, max_group=10,
         )
+        add_fleet(site)
         start = timezone.now() + timedelta(days=1)
         self.slot = Slot.objects.create(
             activity=act, start=start, end=start + timedelta(hours=1), capacity=10)
@@ -126,6 +128,7 @@ class DocumentPdfTest(TestCase):
         act = Activity.objects.create(
             site=site, name="Quad 1H", duration_minutes=60,
             base_price=25000, deposit=0, max_group=10)
+        add_fleet(site)
         start = timezone.now() + timedelta(days=1)
         self.slot = Slot.objects.create(
             activity=act, start=start, end=start + timedelta(hours=1), capacity=10)
@@ -182,6 +185,34 @@ class DocumentPdfTest(TestCase):
         self.assertEqual(doc.status_code, 200)
         self.assertTrue(b"".join(doc.streaming_content).startswith(b"%PDF"))
 
+    def test_recu_velo_libelle_et_prix(self):
+        from datetime import timedelta
+
+        from rest_framework.test import APIClient
+
+        from catalogue.models import Activity, Site, Slot
+        from common.pdf_docs import _booking_context, _order_rows
+
+        site = Site.objects.create(name="Bamako Centre", city="Bamako")
+        add_fleet(site)
+        velo = Activity.objects.create(
+            site=site, name="Vélo 1H", duration_minutes=60,
+            base_price=5000, deposit=0, max_group=10)
+        start = timezone.now() + timedelta(days=2)
+        slot = Slot.objects.create(
+            activity=velo, start=start, end=start + timedelta(hours=1), capacity=10)
+        client = APIClient()
+        client.force_authenticate(user=self.agent)
+        r = client.post("/api/v1/bookings/", {
+            "customer": self.cust.id, "slot": slot.id, "source": "phone",
+            "lines": [{"persons": 2, "quads": 2}]}, format="json")
+        self.assertEqual(r.status_code, 201, r.content[:300])
+        self.assertEqual(r.data["resource_type"], "velo")
+        rows, _, _, _ = _order_rows(_booking_context(r.data["id"]))
+        text = " ".join(f"{left} {right}" for left, right in rows)
+        self.assertIn("vélo", text)
+        self.assertNotIn("Quads solo", text)
+
     def test_rapport_bancaire_pdf(self):
         from rest_framework.test import APIClient
 
@@ -222,6 +253,7 @@ class FacturationUnitesTest(TestCase):
         self.act = Activity.objects.create(
             site=site, name="Quad 1H", duration_minutes=60,
             base_price=25000, deposit=0, max_group=10)
+        add_fleet(site)
         start = timezone.now() + timedelta(days=1)
         self.slot2h = Slot.objects.create(
             activity=self.act, start=start, end=start + timedelta(hours=2), capacity=10)
@@ -309,7 +341,7 @@ class VersionTest(TestCase):
 
 
 class SiteFiltrageTest(TestCase):
-    """Agent, guide, responsables limites a leur site ; appels universels."""
+    """Agent, guide et responsables limites a leur site ; appels filtres par site."""
 
     def setUp(self):
         from datetime import timedelta
@@ -424,25 +456,110 @@ class SiteFiltrageTest(TestCase):
         entry = CashbookEntry.objects.order_by("-id").first()
         self.assertEqual(entry.site_id, self.site_a.id)
 
-    def test_admin_tout_voit_et_appels_universels(self):
-        from telephony.models import CallLog
+    def test_admin_tout_voit_et_filtre_appels_par_site(self):
+        from telephony.models import CallAnomaly, CallLog, TrackedLine
 
         self._booking(self.site_a, "BQ-ORPH-02")
         self._booking(self.site_b, "BQ-KONI-02")
-        CallLog.objects.bulk_create([
-            CallLog(direction="inbound", phone_number="+22376000001",
-                    started_at=timezone.now(), duration_seconds=60,
-                    external_id=f"E{i}")
-            for i in range(2)
-        ])
-        from rest_framework.test import APIClient
+        line_a = TrackedLine.objects.create(
+            label="Ligne A", number="+22320200001", site=self.site_a)
+        line_b = TrackedLine.objects.create(
+            label="Ligne B", number="+22320200002", site=self.site_b)
+        now = timezone.now()
+        call_a = CallLog.objects.create(
+            direction="inbound", phone_number="+22376000001", started_at=now,
+            duration_seconds=60, external_id="E-A", line=line_a,
+            site=self.site_a, imported_by=self.agent)
+        call_b = CallLog.objects.create(
+            direction="inbound", phone_number="+22376000002", started_at=now,
+            duration_seconds=60, external_id="E-B", line=line_b,
+            site=self.site_b, imported_by=self.admin)
+        CallLog.objects.create(
+            direction="inbound", phone_number="+22376000003", started_at=now,
+            duration_seconds=60, external_id="E-NONE")
+        CallAnomaly.objects.create(call=call_a)
+        CallAnomaly.objects.create(call=call_b)
 
         admin = self._client(self.admin)
+        agent = self._client(self.agent)
+        resp = self._client(self.resp)
         self.assertEqual(len(admin.get("/api/v1/sites/").data), 2)
         self.assertEqual(len(admin.get("/api/v1/bookings/").data), 2)
-        self.assertEqual(len(admin.get("/api/v1/calls/").data), 2)
-        # L'agent voit aussi tous les appels (journal universel).
-        self.assertEqual(len(self._client(self.agent).get("/api/v1/calls/").data), 2)
+        self.assertEqual(len(admin.get("/api/v1/calls/").data), 3)
+        self.assertEqual(
+            [x["id"] for x in admin.get(
+                f"/api/v1/calls/?site={self.site_a.id}").data], [call_a.id])
+        self.assertEqual(
+            [x["id"] for x in admin.get(
+                f"/api/v1/calls/?site={self.site_b.id}").data], [call_b.id])
+        # L'agent est verrouille sur son site, même s'il demande l'autre site.
+        self.assertEqual([x["id"] for x in agent.get("/api/v1/calls/").data], [call_a.id])
+        self.assertEqual(
+            [x["id"] for x in agent.get(
+                f"/api/v1/calls/?site={self.site_b.id}").data], [call_a.id])
+        self.assertEqual(
+            [x["id"] for x in agent.get("/api/v1/lines/").data], [line_a.id])
+        # Les anomalies suivent le site de l'appel.
+        self.assertEqual(
+            [x["call"] for x in resp.get("/api/v1/anomalies/").data], [call_a.id])
+        self.assertEqual(len(admin.get("/api/v1/anomalies/").data), 2)
+        self.assertEqual(
+            [x["call"] for x in admin.get(
+                f"/api/v1/anomalies/?site={self.site_b.id}").data], [call_b.id])
+
+    def test_clients_filtres_par_site_ou_reservation(self):
+        from datetime import timedelta
+
+        from bookings.models import Booking
+        from clients.models import Customer
+
+        cust_a = Customer.objects.create(
+            name="Client A", phone="+22376000101", site=self.site_a)
+        cust_b = Customer.objects.create(
+            name="Client B", phone="+22376000102", site=self.site_b)
+        cust_booking = Customer.objects.create(
+            name="Client passage", phone="+22376000103")
+        Booking.objects.create(
+            code="BQ-PASSAGE", customer=cust_booking,
+            slot=self.slots[self.site_a.id], persons=1, quads=1,
+            unit_price=25000, total=25000, deposit_due=10000,
+            qr_token="qr-passage", expires_at=timezone.now() + timedelta(minutes=20))
+
+        agent = self._client(self.agent)
+        self.assertEqual(
+            {c["id"] for c in agent.get("/api/v1/customers/").data},
+            {cust_a.id, cust_booking.id})
+        admin = self._client(self.admin)
+        self.assertEqual(len(admin.get("/api/v1/customers/").data), 3)
+        self.assertEqual(
+            {c["id"] for c in admin.get(
+                f"/api/v1/customers/?site={self.site_b.id}").data},
+            {cust_b.id})
+
+        r = agent.post("/api/v1/customers/", {
+            "name": "Client A créé", "phone": "+22376000104",
+            "site": self.site_b.id}, format="json")
+        self.assertEqual(r.status_code, 201, r.content[:300])
+        self.assertEqual(r.data["site"], self.site_a.id)
+
+    def test_disponibilite_flotte_par_creneau(self):
+        self._booking(self.site_a, "BQ-DISPO-01")
+        agent = self._client(self.agent)
+        slot_a = self.slots[self.site_a.id]
+        r = agent.get(f"/api/v1/bookings/availability/?slot={slot_a.id}")
+        self.assertEqual(r.status_code, 200, r.content[:300])
+        self.assertEqual(r.data["total"], 1)
+        self.assertEqual(r.data["used"], 1)
+        self.assertEqual(r.data["free"], 0)
+        self.assertEqual(r.data["resource_type"], "quad")
+        self.assertEqual(
+            agent.get(f"/api/v1/bookings/availability/?slot="
+                      f"{self.slots[self.site_b.id].id}").status_code, 403)
+        # Le contexte ?site= d'un profil global ne permet pas un autre créneau.
+        self.assertEqual(
+            self._client(self.admin).get(
+                f"/api/v1/bookings/availability/?site={self.site_b.id}"
+                f"&slot={slot_a.id}").status_code, 403)
 
     def test_direction_comptable_filtrent_par_site(self):
         from accounts.models import User

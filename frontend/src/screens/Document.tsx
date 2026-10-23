@@ -200,6 +200,8 @@ export default function Document() {
               ? booking.vehicle_plates
               : (slot?.vehicles ?? []).map((vid) => vehicles.find((v) => v.id === vid)?.plate ?? '').filter(Boolean);
             const kids = isKidsActivityName(activity?.name ?? '');
+            const velo = booking.resource_type === 'velo';
+            const engins = velo ? 'vélo' : 'quad';
             const parts = quadParts(booking.persons, booking.quads);
             const docLines = booking.lines && booking.lines.length > 0 ? [...booking.lines].sort((a, b) => a.rank - b.rank) : null;
             /* H : unité de facturation affichée (heures ou jours), reste à l'identique quand unité = 1. */
@@ -222,7 +224,7 @@ export default function Document() {
                 {docLines ? (
                   <>
                     {docLines.map((l) => (
-                      <div className="leader" key={l.rank}><span>Ligne {l.rank} — {l.persons} pers., {l.quads} quad{l.quads > 1 ? 's' : ''}{units > 1 ? ` Â· ${units} Ã— ${unitLabel}` : ''}</span><span className="dots" aria-hidden="true" /><strong className="num">{fcfa(l.line_total)}</strong></div>
+                      <div className="leader" key={l.rank}><span>Ligne {l.rank} — {l.persons} pers., {l.quads} {engins}{l.quads > 1 ? 's' : ''}{units > 1 ? ` Â· ${units} Ã— ${unitLabel}` : ''}</span><span className="dots" aria-hidden="true" /><strong className="num">{fcfa(l.line_total)}</strong></div>
                     ))}
                     {remise > 0 && (
                       <>
@@ -237,9 +239,9 @@ export default function Document() {
                 ) : (
                   <>
                 <div className="leader"><span>Personnes</span><span className="dots" aria-hidden="true" /><strong className="num">{booking.persons}</strong></div>
-                <div className="leader"><span>Quads</span><span className="dots" aria-hidden="true" /><strong className="num">{booking.quads}{!kids && parts.duo > 0 && parts.solo >= 0 ? ` (${parts.solo} solo + ${parts.duo} duo)` : ''}</strong></div>
-                {kids ? (
-                  <div className="leader"><span>Quad enfant — {booking.persons} Ã— {fcfa(booking.unit_price)}</span><span className="dots" aria-hidden="true" /><strong className="num">{fcfa(booking.total)}</strong></div>
+                <div className="leader"><span>{velo ? 'Vélos' : 'Quads'}</span><span className="dots" aria-hidden="true" /><strong className="num">{booking.quads}{!kids && !velo && parts.duo > 0 && parts.solo >= 0 ? ` (${parts.solo} solo + ${parts.duo} duo)` : ''}</strong></div>
+                {kids || velo ? (
+                  <div className="leader"><span>{velo ? 'Vélo' : 'Quad enfant'} — {booking.persons} Ã— {fcfa(booking.unit_price)}</span><span className="dots" aria-hidden="true" /><strong className="num">{fcfa(booking.total)}</strong></div>
                 ) : (
                   <>
                     {parts.solo > 0 && <div className="leader"><span>Quads solo (1 pers.) — {parts.solo} Ã— {fcfa(PRICE_SOLO_QUAD)}</span><span className="dots" aria-hidden="true" /><strong className="num">{fcfa(parts.solo * PRICE_SOLO_QUAD)}</strong></div>}

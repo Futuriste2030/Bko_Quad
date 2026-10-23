@@ -137,6 +137,7 @@ export default function Fleet() {
   const rows = useMemo(() => items.filter((v) =>
     (fSite === 'all' || String(v.site) === fSite) && (fStatus === 'all' || v.status === fStatus),
   ), [items, fSite, fStatus]);
+  const inService = items.filter((v) => v.status === 'en_service').length;
 
   async function doDelete() {
     if (!toDelete) return;
@@ -389,6 +390,13 @@ export default function Fleet() {
       </div>
       {loading && <SkeletonList n={4} />}
       {error && <div className="alert-error" role="alert">{error}</div>}
+      {!loading && !error && inService === 0 && (
+        <div className="banner banner-warning" role="alert">
+          <Icon name="alert" size={20} />
+          <div><strong>Flotte non inventoriée.</strong>
+            <div className="small">Ajoutez les quads et vélos en service : sans eux, les nouvelles réservations sont bloquées par la disponibilité réelle.</div></div>
+        </div>
+      )}
       {!loading && !error && rows.length === 0 && (
         <EmptyState icon="quad" title="Aucun engin" text="Enregistrez le premier quad de la flotte." />
       )}

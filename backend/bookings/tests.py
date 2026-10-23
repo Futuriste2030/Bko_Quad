@@ -2,7 +2,7 @@
 
 from datetime import timedelta
 
-from django.test import TestCase
+from django.test import TestCase, override_settings
 from django.utils import timezone
 
 from accounts.models import User
@@ -13,19 +13,23 @@ from bookings.services import (
     BookingError,
     apply_discount,
     create_booking,
+    fleet_availability,
     price_for_occupancy,
     transition,
 )
 from catalogue.models import Activity, Site, Slot, Vehicle
+from catalogue.testing import add_fleet
 from clients.models import Customer
 
 
-def make_setup(capacity=4):
+def make_setup(capacity=4, fleet=True):
     site = Site.objects.create(name="Bamako", city="Bamako")
     act = Activity.objects.create(
         site=site, name="Quad 1h", duration_minutes=60,
         base_price=20000, deposit=10000, max_group=10,
     )
+    if fleet:
+        add_fleet(site)
     start = timezone.now() + timedelta(days=1)
     slot = Slot.objects.create(activity=act, start=start, end=start + timedelta(hours=1), capacity=capacity)
     cust = Customer.objects.create(name="M. Traoré", phone="+22370000001")
@@ -55,7 +59,7 @@ class BookingTest(TestCase):
         self.assertEqual(b.events.count(), 1)
 
     def test_flotte_affecte_immatriculations(self):
-        cust, slot, agent = make_setup()
+        cust, slot, agent = make_setup(fleet=False)
         site = slot.activity.site
         for plate in ("Q-101", "Q-102", "Q-103"):
             Vehicle.objects.create(site=site, type="quad", model="Grizzly", plate=plate)
@@ -65,7 +69,7 @@ class BookingTest(TestCase):
         self.assertEqual(b.quads, 1)
 
     def test_flotte_insuffisante_alerte(self):
-        cust, slot, agent = make_setup()
+        cust, slot, agent = make_setup(fleet=False)
         site = slot.activity.site
         Vehicle.objects.create(site=site, type="quad", model="Grizzly", plate="Q-101")
         cust2 = Customer.objects.create(name="Mme Diallo", phone="+22370000002")
@@ -77,7 +81,7 @@ class BookingTest(TestCase):
     def test_chevauchement_partage_flotte(self):
         from datetime import timedelta
 
-        cust, slot, agent = make_setup()
+        cust, slot, agent = make_setup(fleet=False)
         site = slot.activity.site
         for plate in ("Q-101", "Q-102", "Q-103"):
             Vehicle.objects.create(site=site, type="quad", model="Grizzly", plate=plate)
@@ -95,6 +99,102 @@ class BookingTest(TestCase):
             end=slot.end + timedelta(hours=2), capacity=10)
         b2 = create_booking(customer=cust2, slot_id=later.id, persons=4, quads=2, created_by=agent)
         self.assertEqual(b2.vehicles.count(), 2)
+
+    def test_scenario_dg_flotte_six_quads(self):
+        cust, slot, agent = make_setup(capacity=10, fleet=False)
+        site = slot.activity.site
+        for index in range(6):
+            Vehicle.objects.create(
+                site=site, type="quad", model="Grizzly", plate=f"DG-{index:03d}")
+
+        s25 = Slot.objects.create(
+            activity=slot.activity, start=slot.start, end=slot.end, capacity=10)
+        s26_15 = Slot.objects.create(
+            activity=slot.activity, start=slot.start + timedelta(days=1),
+            end=slot.end + timedelta(days=1), capacity=10)
+        s26_10 = Slot.objects.create(
+            activity=slot.activity, start=slot.start + timedelta(days=1, hours=-5),
+            end=slot.end + timedelta(days=1, hours=-5), capacity=10)
+
+        def book(name, phone, slot_id, quads):
+            customer = Customer.objects.create(name=name, phone=phone)
+            return create_booking(
+                customer=customer, slot_id=slot_id, persons=quads,
+                quads=quads, created_by=agent)
+
+        book("Client 1", "+22371000001", s25.id, 2)
+        book("Client 2", "+22371000002", s25.id, 2)
+        self.assertEqual(
+            fleet_availability(site=site, resource_type="quad",
+                               start=s25.start, end=s25.end)["free"], 2)
+        b26 = book("Client 3", "+22371000003", s26_15.id, 2)
+        self.assertEqual(b26.resource_type, "quad")
+        with self.assertRaisesRegex(BookingError, "Flotte insuffisante"):
+            book("Client 4", "+22371000004", s26_15.id, 5)
+        book("Client 5", "+22371000005", s26_10.id, 1)
+        self.assertEqual(Booking.objects.filter(status=Booking.PENDING_DEPOSIT).count(), 4)
+
+    def test_velos_consomment_la_flotte_velo_uniquement(self):
+        cust, slot, agent = make_setup(fleet=False)
+        site = slot.activity.site
+        velo = Activity.objects.create(
+            site=site, name="Vélo manuel 1H", duration_minutes=60,
+            base_price=3000, deposit=0, max_group=10)
+        v = Vehicle.objects.create(
+            site=site, type="velo", model="VTT", plate="V-001")
+        Vehicle.objects.create(
+            site=site, type="quad", model="Grizzly", plate="Q-001")
+        start = slot.start
+        velo_slot = Slot.objects.create(
+            activity=velo, start=start, end=start + timedelta(hours=1), capacity=10)
+        b = create_booking(
+            customer=cust, slot_id=velo_slot.id, persons=1, quads=1,
+            created_by=agent)
+        self.assertEqual(b.resource_type, "velo")
+        self.assertEqual([x.plate for x in b.vehicles.all()], [v.plate])
+        other = Customer.objects.create(name="Mme Vélo", phone="+22371000006")
+        with self.assertRaisesRegex(BookingError, "vélos"):
+            create_booking(
+                customer=other, slot_id=velo_slot.id, persons=1, quads=1,
+                created_by=agent)
+
+    def test_flotte_isolee_par_site(self):
+        cust, slot, agent = make_setup(fleet=False)
+        site = slot.activity.site
+        add_fleet(site, quads=2, velos=0)
+        other = Site.objects.create(name="Ailleurs", city="Bamako")
+        add_fleet(other, quads=2, velos=0)
+        other_act = Activity.objects.create(
+            site=other, name="Quad 1h", duration_minutes=60,
+            base_price=25000, deposit=0, max_group=10)
+        other_slot = Slot.objects.create(
+            activity=other_act, start=slot.start, end=slot.end, capacity=10)
+        create_booking(customer=cust, slot_id=slot.id, persons=2, quads=2,
+                       created_by=agent)
+        customer_b = Customer.objects.create(name="Client B", phone="+22371000007")
+        b = create_booking(customer=customer_b, slot_id=other_slot.id,
+                           persons=2, quads=2, created_by=agent)
+        self.assertEqual(b.slot.activity.site, other)
+
+    def test_annulation_libere_la_flotte(self):
+        cust, slot, agent = make_setup(capacity=10, fleet=False)
+        add_fleet(slot.activity.site, quads=6, velos=0)
+        b = create_booking(customer=cust, slot_id=slot.id, persons=2, quads=2,
+                           created_by=agent)
+        transition(booking_id=b.id, to_status=Booking.CANCELLED,
+                   actor=agent, reason="Client absent")
+        other = Customer.objects.create(name="Groupe", phone="+22371000008")
+        b2 = create_booking(customer=other, slot_id=slot.id, persons=6, quads=6,
+                            created_by=agent)
+        self.assertEqual(b2.quads, 6)
+
+    @override_settings(BKO_FLEET_STRICT=False)
+    def test_mode_souple_trace_sans_flotte(self):
+        cust, slot, agent = make_setup(fleet=False)
+        b = create_booking(customer=cust, slot_id=slot.id, persons=1,
+                           quads=1, created_by=agent)
+        self.assertEqual(b.vehicles.count(), 0)
+        self.assertTrue(b.events.filter(action="created_fleet_soft").exists())
 
     def test_correction_vehicules_anciens_recus_tracee(self):
         from bookings.services import set_booking_vehicles
@@ -234,6 +334,7 @@ class BookingTest(TestCase):
 
     def test_formule_enfant_orpheus_solo_uniquement(self):
         site = Site.objects.create(name="Hôtel Orpheus", city="Bamako")
+        add_fleet(site)
         formule = Activity.objects.create(
             site=site, name="Quad kid 15 min", duration_minutes=15,
             base_price=5000, deposit=0, max_group=6,
@@ -265,6 +366,7 @@ class BookingTest(TestCase):
     def test_orpheus_sans_quad_adulte_mais_velo_ok(self):
         # Orpheus : quads enfants et vélos, pas de quad adulte.
         site = Site.objects.create(name="Hôtel Orpheus", city="Bamako")
+        add_fleet(site)
         quad = Activity.objects.create(
             site=site, name="Quad 1H", duration_minutes=60,
             base_price=25000, deposit=0, max_group=10,
@@ -289,6 +391,7 @@ class BookingTest(TestCase):
     def test_konibabougou_quads_uniquement(self):
         # Konibabougou : ni vélo électrique ni vélo manuel, quads adultes OK.
         site = Site.objects.create(name="Konibabougou", city="Bamako")
+        add_fleet(site)
         quad = Activity.objects.create(
             site=site, name="Quad 1H", duration_minutes=60,
             base_price=25000, deposit=0, max_group=10,
@@ -354,6 +457,7 @@ class BookingTest(TestCase):
 
     def test_enfant_plusieurs_lignes_individuelles(self):
         site = Site.objects.create(name="Hôtel Orpheus", city="Bamako")
+        add_fleet(site)
         formule = Activity.objects.create(
             site=site, name="Quad kid 15 min", duration_minutes=15,
             base_price=5000, deposit=0, max_group=6,

@@ -58,7 +58,7 @@ export default function Closing() {
     <AppShell anomalies={open.length}>
       <PageHeader
         title="Clôture du jour"
-        sub={`${new Date().toLocaleDateString('fr-FR', { weekday: 'long', day: '2-digit', month: '2-digit', year: 'numeric' })} — clôture automatique à ${heure} (heure du Mali), consultatif.`}
+        sub={`${new Date().toLocaleDateString('fr-FR', { weekday: 'long', day: '2-digit', month: '2-digit', year: 'numeric' })} — clôture réseau automatique à ${heure} (heure du Mali), consultative.`}
       />
 
       {loading && <SkeletonList n={3} />}
@@ -88,7 +88,7 @@ export default function Closing() {
                 </div>
               </div>
               <p className="small muted" style={{ marginTop: 12 }}>
-                Clôturée automatiquement le {validéeLe} — le bordereau est verrouillé.
+                Clôturée automatiquement le {validéeLe} — le bordereau réseau est verrouillé.
                 Pour toute correction ultérieure, passez par un justificatif (motif tracé).
               </p>
             </section>
@@ -137,11 +137,11 @@ export default function Closing() {
           )}
 
           <section className="card">
-            <div className="chart-title"><h3>{cloturee ? 'Bordereau du jour' : 'Clôture automatique'}</h3></div>
+            <div className="chart-title"><h3>{cloturee ? 'Bordereau réseau' : 'Clôture automatique réseau'}</h3></div>
             <p className="small muted" style={{ marginBottom: 10 }}>
               {cloturee
-                ? `Journée clôturée à ${heure} par le système. Ce bordereau n'est plus modifiable : il reste consultatif.`
-                : `La journée sera clôturée automatiquement à ${heure} (heure du Mali) : aucun bouton à utiliser, le bordereau est généré et verrouillé par le système.`}
+                ? `Journée clôturée à ${heure} par le système. Ce bordereau réseau n'est plus modifiable : il reste consultatif.`
+                : `La journée sera clôturée automatiquement à ${heure} (heure du Mali) : aucun bouton à utiliser, le bordereau réseau est généré et verrouillé par le système.`}
               {!cloturee && open.length > 0 &&
                 ` ${open.length} anomalie${open.length > 1 ? 's' : ''} d'appel encore ouverte${open.length > 1 ? 's' : ''} : justifiez-la${open.length > 1 ? 's' : ''} avant ${heure} (motif tracé).`}
             </p>

@@ -23,8 +23,8 @@ export function activeSiteId(): number | null {
 }
 
 /* Ajoute `site=` à la requête (lecture et écriture). Exceptions : catalogue
-   des sites (le sélecteur doit lister tout le réseau) et exports (périmètre
-   explicite, certains jeux comme les appels ne sont pas filtrables). */
+   des sites (le sélecteur doit lister tout le réseau) et exports (paramètre
+   explicite). Les appels et anomalies sont désormais filtrables par site. */
 function withSite(path: string): string {
   const site = activeSiteId();
   if (site === null) return path;
@@ -45,7 +45,8 @@ export interface BookingLine {
 }
 export interface Booking {
   id: number; code: string; customer: number; slot: number;
-  persons: number; quads: number; unit_price: number; total: number;
+  persons: number; quads: number; resource_type?: 'quad' | 'velo';
+  unit_price: number; total: number;
   deposit_due: number; status: string; source: string;
   expires_at: string; qr_token: string; cancel_reason: string;
   units?: number;
@@ -56,10 +57,18 @@ export interface Booking {
   queued?: boolean;
 }
 export interface Slot { id: number; activity: number; start: string; end: string; capacity: number; closed: boolean; vehicles?: number[] }
-export interface Customer { id: number; name: string; phone: string; whatsapp: string; email: string; queued?: boolean }
+export interface FleetAvailability {
+  slot: number; resource_type: 'quad' | 'velo'; total: number; used: number; free: number;
+}
+export interface Customer {
+  id: number; name: string; phone: string; whatsapp: string; email: string;
+  site?: number | null; site_name?: string; queued?: boolean;
+}
 export interface CallItem {
   id: number; direction: string; phone_number: string;
   started_at: string; duration_seconds: number; source: string; external_id: string;
+  line: number | null; line_label: string; site: number | null; site_name: string;
+  imported_by: number | null; imported_by_name: string;
 }
 export interface Anomaly { id: number; call: number; status: string; reason: string; comment: string; queued?: boolean }
 export interface Closing {
@@ -124,13 +133,14 @@ async function req(path: string, init: RequestInit = {}, auth = true, retried = 
 }
 
 async function list<T>(path: string): Promise<T[]> {
+  const key = withSite(path);
   let r: Response;
   try {
     r = await req(path);
   } catch (e) {
     /* J : hors ligne, on rend la dernière version connue (cache local). */
     if (e instanceof NetworkError) {
-      const cached = await cacheGet<T[]>(path);
+      const cached = await cacheGet<T[]>(key);
       if (cached) return cached;
       throw new Error('Hors ligne : cette liste n’a jamais été consultée sur ce téléphone.');
     }
@@ -140,7 +150,7 @@ async function list<T>(path: string): Promise<T[]> {
   if (!r.ok) throw new Error('Chargement impossible, réessayez.');
   const data = await r.json();
   const out = (Array.isArray(data) ? data : data.results ?? []) as T[];
-  void cacheSet(path, out);
+  void cacheSet(key, out);
   return out;
 }
 
@@ -351,6 +361,17 @@ export const listSlots = (): Promise<Slot[]> => list<Slot>('/slots/');
 export const listCustomers = (): Promise<Customer[]> => list<Customer>('/customers/');
 export const listCalls = (): Promise<CallItem[]> => list<CallItem>('/calls/');
 export const listAnomalies = (): Promise<Anomaly[]> => list<Anomaly>('/anomalies/');
+
+export async function getAvailability(slot: number, activity?: number): Promise<FleetAvailability> {
+  const query = `slot=${slot}${activity ? `&activity=${activity}` : ''}`;
+  const r = await req(`/bookings/availability/?${query}`);
+  if (r.status === 401) { logout(); throw new Error('Session expirée, reconnectez-vous.'); }
+  if (!r.ok) {
+    const err = await r.json().catch(() => ({}));
+    throw new Error(err.detail ?? 'Disponibilité de la flotte indisponible.');
+  }
+  return r.json() as Promise<FleetAvailability>;
+}
 
 export async function createBooking(input: { customer: number; slot: number; persons: number; quads?: number; source?: string; activity?: number; lines?: { persons: number; quads: number }[]; previewTotal?: number; customerLabel?: string }): Promise<Booking> {
   /* J : code proposé par l'appareil (le Hub le garde s'il est libre) + heure
@@ -860,7 +881,7 @@ export async function createLine(input: { label: string; number: string; site?: 
   return postOne<TrackedLine>('/lines/', input);
 }
 
-export async function importCalls(line_id: number, calls: Array<{ direction: string; phone_number: string; started_at: string; duration_seconds: number; external_id: string }>): Promise<{ created: number; skipped: number; last_sync: string | null }> {
+export async function importCalls(line_id: number, calls: Array<{ direction: string; phone_number: string; started_at: string; duration_seconds: number; external_id: string }>): Promise<{ created: number; skipped: number; updated: number; last_sync: string | null }> {
   return postOne('/calls/import/', { line_id, calls });
 }
 

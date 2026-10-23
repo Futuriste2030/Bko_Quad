@@ -10,6 +10,7 @@ from rest_framework.test import APIClient
 from accounts.models import User
 from bookings.models import Booking, BookingEvent
 from catalogue.models import Activity, Site, Slot
+from catalogue.testing import add_fleet
 from clients.models import Customer
 from payments.models import Payment
 from sync.models import IdempotencyKey
@@ -27,6 +28,7 @@ class OfflineSyncTest(TestCase):
             site=self.site, name="Quad 1h", duration_minutes=60,
             base_price=20000, deposit=10000, max_group=10,
         )
+        add_fleet(self.site, quads=5)
         start = timezone.now() + timedelta(days=1)
         self.slot = Slot.objects.create(
             activity=self.activity, start=start, end=start + timedelta(hours=1), capacity=10)

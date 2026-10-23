@@ -7,8 +7,8 @@ import { ConfirmDialog, EmptyState, IconButton, PageHeader, SkeletonList } from 
 import { useToast } from '../lib/toast';
 import Icon from '../lib/icons';
 import {
-  cancelBooking, checkInBooking, completeBooking, expireBooking, listActivities, listBookingEvents, listBookings, listSlots, listVehicles, noShowBooking,
-  type Activity, type Booking, type BookingEventItem, type Slot, type Vehicle,
+  cancelBooking, checkInBooking, completeBooking, expireBooking, listActivities, listBookingEvents, listBookings, listSlots, noShowBooking,
+  type Activity, type Booking, type BookingEventItem, type Slot,
 } from '../lib/api';
 import { fmtCountdown, getRide, remainingMs, rideFromCheckin, useNow, type Ride } from '../lib/ride';
 import { useSync } from '../lib/sync';
@@ -40,7 +40,6 @@ export default function Reservations() {
   const [slots, setSlots] = useState<Slot[]>([]);
   const [activities, setActivities] = useState<Activity[]>([]);
   const [events, setEvents] = useState<BookingEventItem[]>([]);
-  const [vehicles, setVehicles] = useState<Vehicle[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [q, setQ] = useState('');
@@ -56,11 +55,10 @@ export default function Reservations() {
     Promise.all([
       listBookings(),
       listSlots().catch(() => [] as Slot[]),
-      listVehicles().catch(() => [] as Vehicle[]),
       listActivities().catch(() => [] as Activity[]),
       listBookingEvents().catch(() => [] as BookingEventItem[]),
     ])
-      .then(([b, s, v, a, e]) => { setItems(b); setSlots(s); setVehicles(v); setActivities(a); setEvents(e); })
+      .then(([b, s, a, e]) => { setItems(b); setSlots(s); setActivities(a); setEvents(e); })
       .catch((e: Error) => setError(e.message)).finally(() => setLoading(false));
   }
   useEffect(load, []);
@@ -110,10 +108,11 @@ export default function Reservations() {
     finally { setBusy(false); }
   }
 
-  const platesOf = (b: Booking) => {
-    const ids = slots.find((s) => s.id === b.slot)?.vehicles ?? [];
-    return ids.map((id) => vehicles.find((v) => v.id === id)?.plate ?? '').filter(Boolean).join(', ');
+  const resourceNoun = (b: Booking) => {
+    const base = b.resource_type === 'velo' ? 'vélo' : 'quad';
+    return b.quads > 1 ? `${base}s` : base;
   };
+  const platesOf = (b: Booking) => (b.vehicle_plates ?? []).join(', ');
 
   const terminal = (s: string) => ['completed', 'cancelled', 'no_show', 'expired'].includes(s);
 
@@ -209,8 +208,8 @@ export default function Reservations() {
                 </div>
                 <div className="row-meta">
                   <span className="num">{fmtSlot(b.expires_at)}</span>
-                  <span className="num">{b.persons} pers. Â· {b.quads} quad{b.quads > 1 ? 's' : ''}</span>
-                  {platesOf(b) && <span className="num">Quads : {platesOf(b)}</span>}
+                  <span className="num">{b.persons} pers. Â· {b.quads} {resourceNoun(b)}</span>
+                  {platesOf(b) && <span className="num">{b.resource_type === 'velo' ? 'Vélos' : 'Quads'} : {platesOf(b)}</span>}
                 </div>
                 <div className="row-top">
                   <strong className="num">{fcfa(b.total)}</strong>
@@ -278,7 +277,7 @@ export default function Reservations() {
                   <tr key={b.id}>
                     <td className="num"><strong>{b.code}</strong></td>
                     <td className="num">{fmtSlot(b.expires_at)}</td>
-                    <td className="num">{b.persons} Â· {b.quads} quads</td>
+                    <td className="num">{b.persons} Â· {b.quads} {resourceNoun(b)}</td>
                     <td className="num">{fcfa(b.total)}</td>
                     <td className="num">{fcfa(Math.max(0, b.total - b.deposit_due))}</td>
                     <td><StatusBadge status={b.status} /></td>

@@ -17,11 +17,23 @@ class CallLog(models.Model):
     duration_seconds = models.PositiveIntegerField(default=0)
     source = models.CharField(max_length=30, default="android_app")
     external_id = models.CharField(max_length=100, unique=True)
+    line = models.ForeignKey(
+        "TrackedLine", null=True, blank=True, on_delete=models.SET_NULL,
+        related_name="calls", help_text="Ligne d'entreprise ayant reçu ou émis l'appel")
+    site = models.ForeignKey(
+        "catalogue.Site", null=True, blank=True, on_delete=models.SET_NULL,
+        related_name="calls", help_text="Site figé à l'import (ligne ou importateur)")
+    imported_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL, null=True, blank=True, on_delete=models.SET_NULL,
+        related_name="imported_calls", help_text="Compte ayant remonté l'appel")
     created_at = models.DateTimeField(auto_now_add=True)
 
     class Meta:
         ordering = ["-started_at"]
-        indexes = [models.Index(fields=["phone_number", "started_at"])]
+        indexes = [
+            models.Index(fields=["phone_number", "started_at"]),
+            models.Index(fields=["site", "started_at"]),
+        ]
 
     def __str__(self):
         return f"{self.phone_number} {self.started_at:%d/%m/%Y %H:%M}"

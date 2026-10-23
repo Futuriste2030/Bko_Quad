@@ -36,7 +36,8 @@ class BookingError(ValueError):
 
 
 def _snapshot(b):
-    return {"status": b.status, "persons": b.persons, "units": b.units,
+    return {"status": b.status, "persons": b.persons, "quads": b.quads,
+            "resource_type": b.resource_type, "units": b.units,
             "total": b.total, "discount_total": sum(l.discount for l in b.lines.all()),
             "offline_at": b.offline_at.isoformat() if b.offline_at else None,
             "offline_ref": b.offline_ref}
@@ -156,8 +157,7 @@ def price_line(*, pricing, persons, quads):
     return PRICE_SOLO_QUAD, parts["total"]
 
 
-def _taken_vehicle_ids(site, start, end, exclude_booking=None):
-    """Immatriculations déjà prises sur les créneaux qui se chevauchent (même site)."""
+def _overlapping_active_bookings(site, start, end, exclude_booking=None):
     from catalogue.models import Slot
 
     overlapping = Slot.objects.filter(
@@ -167,29 +167,56 @@ def _taken_vehicle_ids(site, start, end, exclude_booking=None):
         status__in=[Booking.PENDING_DEPOSIT, Booking.CONFIRMED, Booking.CHECKED_IN])
     if exclude_booking is not None:
         qs = qs.exclude(pk=exclude_booking)
-    taken = qs.exclude(vehicles__id__isnull=True).values_list("vehicles__id", flat=True)
+    return qs
+
+
+def _taken_vehicle_ids(site, start, end, exclude_booking=None):
+    """Immatriculations déjà prises sur les créneaux qui se chevauchent (même site)."""
+    taken = _overlapping_active_bookings(
+        site, start, end, exclude_booking=exclude_booking,
+    ).exclude(vehicles__id__isnull=True).values_list("vehicles__id", flat=True)
     return set(x for x in taken if x is not None)
+
+
+def fleet_availability(*, site, resource_type, start, end, exclude_booking=None):
+    """Capacité réelle d'un site sur un intervalle, par type de ressource."""
+    from catalogue.models import Vehicle
+
+    total = Vehicle.objects.filter(
+        site=site, type=resource_type, status="en_service").count()
+    used = _overlapping_active_bookings(
+        site, start, end, exclude_booking=exclude_booking,
+    ).filter(resource_type=resource_type).aggregate(total=Sum("quads"))["total"] or 0
+    return {"total": total, "used": used, "free": max(0, total - used)}
 
 
 def assign_vehicles(*, site, vehicle_type, needed, start, end):
     """Affecte `needed` engins en service du site, hors chevauchements.
 
-    Engins déjà pris = affectés aux réservations actives sur des créneaux
-    qui se chevauchent (même site). Flotte non inventoriée (0 engin en
-    service) : on ne bloque pas, sans immatriculations.
+    En mode strict, la somme des quads/vélos des réservations actives qui se
+    chevauchent ne peut pas dépasser la flotte en service du site. Le mode
+    souple (BKO_FLEET_STRICT=0) conserve l'affectation documentaire sans
+    bloquer, le temps d'inventorier la flotte en production.
     """
     from catalogue.models import Vehicle
 
+    strict = getattr(settings, "BKO_FLEET_STRICT", True)
     pool = list(Vehicle.objects.select_for_update().filter(
         site=site, type=vehicle_type, status="en_service",
     ).order_by("plate").values_list("id", flat=True))
-    if not pool:
-        return []
     free = [vid for vid in pool if vid not in _taken_vehicle_ids(site, start, end)]
-    if len(free) < needed:
-        name = "vélos" if vehicle_type == "velo" else "quads"
+    if not strict:
+        return free[:needed]
+    name = "vélos" if vehicle_type == "velo" else "quads"
+    if not pool:
         raise BookingError(
-            f"Flotte insuffisante sur {site.name} : {len(free)} {name} libre(s) "
+            f"Flotte insuffisante sur {site.name} : aucun {name} en service. "
+            "Ajoutez des engins ou choisissez un autre site.")
+    available = fleet_availability(
+        site=site, resource_type=vehicle_type, start=start, end=end)
+    if available["free"] < needed:
+        raise BookingError(
+            f"Flotte insuffisante sur {site.name} : {available['free']} {name} libre(s) "
             f"pour {needed} demandé(s). Ajoutez des engins ou choisissez un autre créneau.")
     return free[:needed]
 
@@ -307,10 +334,12 @@ def create_booking(*, customer, slot_id, persons, quads=1, source="phone", creat
         )
         if used + total_persons > slot.capacity:
             raise BookingError("Ce créneau est complet, choisissez-en un autre.")
-        # Flotte réelle : affecte les engins en service du site (alerte si dépassement).
-        vehicle_type = "velo" if is_velo_activity(pricing.name) else "quad"
+        # Flotte réelle : le type de ressource est figé sur la réservation.
+        resource_type = (
+            Booking.RESOURCE_VELO if is_velo_activity(pricing.name)
+            else Booking.RESOURCE_QUAD)
         assigned = assign_vehicles(
-            site=slot.activity.site, vehicle_type=vehicle_type,
+            site=slot.activity.site, vehicle_type=resource_type,
             needed=total_quads, start=slot.start, end=slot.end)
         expiry_min = getattr(settings, "BKO_BOOKING_EXPIRY_MINUTES", 240)
         # J : la fenêtre d'acompte part de l'heure de saisie hors ligne ; si elle
@@ -332,6 +361,7 @@ def create_booking(*, customer, slot_id, persons, quads=1, source="phone", creat
                         slot=slot,
                         persons=total_persons,
                         quads=total_quads,
+                        resource_type=resource_type,
                         unit_price=unit,
                         total=total,
                         units=units,
@@ -356,6 +386,15 @@ def create_booking(*, customer, slot_id, persons, quads=1, source="phone", creat
                         booking=b, actor=created_by, action="created",
                         before={}, after=_snapshot(b),
                     )
+                    if not getattr(settings, "BKO_FLEET_STRICT", True):
+                        BookingEvent.objects.create(
+                            booking=b, actor=created_by, action="created_fleet_soft",
+                            before={}, after={
+                                "reason": "BKO_FLEET_STRICT=0",
+                                "site": slot.activity.site.name,
+                                "resource_type": resource_type,
+                                "quads": total_quads,
+                            })
                     return b
             except IntegrityError:
                 # Code déjà pris (proposition de l'appareil) : on regénère.

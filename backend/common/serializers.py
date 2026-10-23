@@ -36,9 +36,16 @@ class UserSerializer(serializers.ModelSerializer):
 
 
 class CustomerSerializer(serializers.ModelSerializer):
+    site_name = serializers.SerializerMethodField()
+
     class Meta:
         model = Customer
-        fields = ["id", "name", "phone", "whatsapp", "email", "notes", "created_at"]
+        fields = ["id", "name", "phone", "whatsapp", "email", "notes", "site",
+                  "site_name", "created_at"]
+        read_only_fields = ["site_name"]
+
+    def get_site_name(self, o):
+        return o.site.name if o.site_id else ""
 
 
 class SiteSerializer(serializers.ModelSerializer):
@@ -96,12 +103,12 @@ class BookingSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = Booking
-        fields = ["id", "code", "customer", "slot", "persons", "quads", "unit_price",
-                  "units", "total", "deposit_due", "status", "source", "expires_at",
-                  "qr_token", "cancel_reason", "lines", "vehicle_plates", "discount_total",
-                  "offline_at"]
-        read_only_fields = ["code", "unit_price", "units", "total", "deposit_due",
-                            "status", "expires_at", "qr_token"]
+        fields = ["id", "code", "customer", "slot", "persons", "quads", "resource_type",
+                  "unit_price", "units", "total", "deposit_due", "status", "source",
+                  "expires_at", "qr_token", "cancel_reason", "lines", "vehicle_plates",
+                  "discount_total", "offline_at"]
+        read_only_fields = ["code", "resource_type", "unit_price", "units", "total",
+                            "deposit_due", "status", "expires_at", "qr_token"]
 
     def get_vehicle_plates(self, o):
         return [v.plate for v in o.vehicles.all().order_by("plate")]
@@ -142,9 +149,27 @@ class MessageSerializer(serializers.ModelSerializer):
 
 
 class CallLogSerializer(serializers.ModelSerializer):
+    line_label = serializers.SerializerMethodField()
+    site_name = serializers.SerializerMethodField()
+    imported_by_name = serializers.SerializerMethodField()
+
     class Meta:
         model = CallLog
-        fields = ["id", "direction", "phone_number", "started_at", "duration_seconds", "source", "external_id"]
+        fields = ["id", "direction", "phone_number", "started_at", "duration_seconds",
+                  "source", "external_id", "line", "line_label", "site", "site_name",
+                  "imported_by", "imported_by_name"]
+        read_only_fields = ["line", "site", "imported_by"]
+
+    def get_line_label(self, o):
+        return o.line.label if o.line_id else ""
+
+    def get_site_name(self, o):
+        return o.site.name if o.site_id else ""
+
+    def get_imported_by_name(self, o):
+        if not o.imported_by_id:
+            return ""
+        return o.imported_by.get_full_name() or o.imported_by.username
 
 
 class CallAnomalySerializer(serializers.ModelSerializer):
@@ -449,6 +474,18 @@ class TrackedLineSerializer(serializers.ModelSerializer):
 
     def get_site_name(self, o):
         return o.site.name if o.site_id else ""
+
+    def validate(self, attrs):
+        site = attrs.get("site", getattr(self.instance, "site", None))
+        if site is None:
+            request = self.context.get("request")
+            user = getattr(request, "user", None)
+            if getattr(user, "site_id", None):
+                attrs["site"] = user.site
+            else:
+                raise serializers.ValidationError(
+                    {"site": "Site requis pour cette ligne d'entreprise."})
+        return attrs
 
 
 class EmployeeSerializer(serializers.ModelSerializer):

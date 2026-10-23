@@ -11,6 +11,7 @@ from django.utils import timezone
 from accounts.models import User
 from bookings.services import create_booking
 from catalogue.models import Activity, Site, Slot
+from catalogue.testing import add_fleet
 from clients.models import Customer
 from telephony.models import CallLog, DailyClosing, TrackedLine, TrackedLine
 from telephony.services import (
@@ -48,11 +49,12 @@ class CallLogTest(TestCase):
 
 class ReconcileTest(TestCase):
     def setUp(self):
-        site = Site.objects.create(name="Bamako", city="Bamako")
+        self.site = Site.objects.create(name="Bamako", city="Bamako")
         act = Activity.objects.create(
-            site=site, name="Quad 1h", duration_minutes=60,
+            site=self.site, name="Quad 1h", duration_minutes=60,
             base_price=20000, deposit=10000, max_group=10,
         )
+        add_fleet(self.site, quads=5)
         start = timezone.now() + timedelta(days=1)
         self.slot = Slot.objects.create(
             activity=act, start=start, end=start + timedelta(hours=1), capacity=10)
@@ -69,10 +71,32 @@ class ReconcileTest(TestCase):
         call = CallLog.objects.create(
             direction="inbound", phone_number="+22378803072",
             started_at=timezone.now(), duration_seconds=60, external_id="ext-a",
+            site=self.site,
         )
         found, anomaly = reconcile_call(call.id)
         self.assertIsNone(anomaly)
         self.assertEqual(found.id, b.id)
+
+    def test_ne_rapproche_pas_une_reservation_d_un_autre_site(self):
+        other = Site.objects.create(name="Konibabougou", city="Bamako")
+        add_fleet(other, quads=5)
+        act = Activity.objects.create(
+            site=other, name="Quad 1h", duration_minutes=60,
+            base_price=20000, deposit=10000, max_group=10,
+        )
+        start = timezone.now() + timedelta(days=1)
+        slot = Slot.objects.create(
+            activity=act, start=start, end=start + timedelta(hours=1), capacity=10)
+        cust = Customer.objects.create(name="M. Traoré", phone="+22378803072")
+        create_booking(customer=cust, slot_id=slot.id, persons=1, created_by=self.agent)
+        call = CallLog.objects.create(
+            direction="inbound", phone_number="+22378803072",
+            started_at=timezone.now(), duration_seconds=60, external_id="ext-cross",
+            site=self.site,
+        )
+        found, anomaly = reconcile_call(call.id)
+        self.assertIsNone(found)
+        self.assertEqual(anomaly.status, "open")
 
     def test_anomalie_sans_reservation_puis_motif(self):
         call = CallLog.objects.create(
@@ -104,18 +128,44 @@ class TrackedLineTest(TestCase):
     def test_lignes_lecture_agent_gestion_responsable(self):
         from rest_framework.test import APIClient
 
+        site = Site.objects.create(name="Bamako", city="Bamako")
         agent = User.objects.create_user(
-            username="agent1", password="x", phone="+22370000009", role="agent")
+            username="agent1", password="x", phone="+22370000009", role="agent",
+            site=site)
         resp = User.objects.create_user(
-            username="resp1", password="x", phone="+22370000002", role="responsable")
+            username="resp1", password="x", phone="+22370000002", role="responsable",
+            site=site)
         client = APIClient()
         client.force_authenticate(user=resp)
-        r = client.post("/api/v1/lines/", {"label": "Ligne Business", "number": "+22320201212"})
+        r = client.post("/api/v1/lines/", {"label": "Ligne Business",
+                                           "number": "+22320201212"})
         self.assertEqual(r.status_code, 201)
+        self.assertEqual(r.data["site"], site.id)
         client.force_authenticate(user=agent)
         self.assertEqual(client.get("/api/v1/lines/").status_code, 200)
+        self.assertEqual(
+            [x["id"] for x in client.get("/api/v1/lines/").data], [r.data["id"]])
         self.assertEqual(client.post("/api/v1/lines/", {"label": "X", "number": "+2231"}).status_code, 403)
         self.assertEqual(TrackedLine.objects.filter(active=True).count(), 1)
+
+    def test_admin_doit_choisir_le_site_de_la_ligne(self):
+        from rest_framework.test import APIClient
+
+        admin = User.objects.create_user(
+            username="boss", password="x", phone="+22370000001", role="admin")
+        site = Site.objects.create(name="Bamako", city="Bamako")
+        client = APIClient()
+        client.force_authenticate(user=admin)
+        bad = client.post("/api/v1/lines/", {"label": "Sans site", "number": "+22320201213"})
+        self.assertEqual(bad.status_code, 400)
+        r = client.post("/api/v1/lines/", {
+            "label": "Avec site", "number": "+22320201214", "site": site.id})
+        self.assertEqual(r.status_code, 201)
+        self.assertEqual(r.data["site"], site.id)
+        self.assertEqual(
+            [x["id"] for x in client.get(
+                f"/api/v1/lines/?site={site.id}").data], [r.data["id"]])
+        self.assertEqual(len(client.get("/api/v1/lines/").data), 1)
 
 
 class ImportCallsTest(TestCase):
@@ -129,9 +179,15 @@ class ImportCallsTest(TestCase):
         self.line_ci = TrackedLine.objects.create(
             label="Ligne Business CI", number="+2252720121212", site=self.site_ci)
         self.agent = User.objects.create_user(
-            username="collecteur", password="x", phone="+22370000009", role="agent")
+            username="collecteur", password="x", phone="+22370000009", role="agent",
+            site=self.site_ml)
+        self.admin = User.objects.create_user(
+            username="admin-collecteur", password="x", phone="+22370000001",
+            role="admin")
         self.client = APIClient()
         self.client.force_authenticate(user=self.agent)
+        self.admin_client = APIClient()
+        self.admin_client.force_authenticate(user=self.admin)
 
     def _payload(self, line, phone, ext):
         return {"line_id": line.id, "calls": [{
@@ -156,13 +212,55 @@ class ImportCallsTest(TestCase):
         self.line_ml.refresh_from_db()
         self.assertIsNotNone(self.line_ml.last_sync)
         self.assertEqual(CallLog.objects.filter(external_id="ml-1").count(), 1)
-        self.assertEqual(CallLog.objects.get(external_id="ml-1").phone_number, "+22378803072")
+        call = CallLog.objects.get(external_id="ml-1")
+        self.assertEqual(call.phone_number, "+22378803072")
+        self.assertEqual(call.line_id, self.line_ml.id)
+        self.assertEqual(call.site_id, self.site_ml.id)
+        self.assertEqual(call.imported_by_id, self.agent.id)
 
     def test_import_ci_normalise_225(self):
-        r = self.client.post("/api/v1/calls/import/", self._payload(self.line_ci, "0709090808", "ci-1"),
-                             format="json")
+        r = self.admin_client.post(
+            "/api/v1/calls/import/", self._payload(self.line_ci, "0709090808", "ci-1"),
+            format="json")
         self.assertEqual(r.status_code, 201)
-        self.assertEqual(CallLog.objects.get(external_id="ci-1").phone_number, "+2250709090808")
+        call = CallLog.objects.get(external_id="ci-1")
+        self.assertEqual(call.phone_number, "+2250709090808")
+        self.assertEqual(call.site_id, self.site_ci.id)
+        self.assertEqual(call.imported_by_id, self.admin.id)
+
+    def test_agent_ne_peut_pas_importer_une_autre_ligne(self):
+        r = self.client.post(
+            "/api/v1/calls/import/", self._payload(self.line_ci, "0709090808", "ci-refus"),
+            format="json")
+        self.assertEqual(r.status_code, 403)
+        self.assertFalse(CallLog.objects.filter(external_id="ci-refus").exists())
+
+    def test_ligne_sans_site_prend_le_site_de_l_agent(self):
+        line = TrackedLine.objects.create(
+            label="Ligne sans site", number="+22320209999")
+        r = self.client.post(
+            "/api/v1/calls/import/", self._payload(line, "78803072", "ml-sans-site"),
+            format="json")
+        self.assertEqual(r.status_code, 201)
+        call = CallLog.objects.get(external_id="ml-sans-site")
+        self.assertEqual(call.site_id, self.site_ml.id)
+        line.refresh_from_db()
+        self.assertIsNone(line.site_id)
+
+    def test_reimport_complete_les_metadonnees(self):
+        CallLog.objects.create(
+            direction="inbound", phone_number="+22378803072",
+            started_at=timezone.now(), duration_seconds=60,
+            external_id="ml-meta")
+        r = self.client.post(
+            "/api/v1/calls/import/", self._payload(self.line_ml, "78803072", "ml-meta"),
+            format="json")
+        self.assertEqual(r.status_code, 201)
+        self.assertEqual(r.data["updated"], 1)
+        call = CallLog.objects.get(external_id="ml-meta")
+        self.assertEqual(call.line_id, self.line_ml.id)
+        self.assertEqual(call.site_id, self.site_ml.id)
+        self.assertEqual(call.imported_by_id, self.agent.id)
 
     def test_duree_definitive_ecrase_le_zero(self):
         now = timezone.now().isoformat()

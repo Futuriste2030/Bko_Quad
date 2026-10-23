@@ -36,14 +36,17 @@ def normalize_phone(raw, default_country="223"):
     return "+" + default_country + digits
 
 
-def import_calls(entries, line=None):
+def import_calls(entries, line=None, site=None, imported_by=None):
     """Importe un lot du journal collecteur (APK entreprise).
 
     - lots ≤ 500 (contrôlé aussi côté vue), `external_id` idempotent.
     - normalisation +223/+225 selon le pays de la ligne (défaut Mali).
+    - rattache chaque appel à sa ligne, au site de la ligne (ou au site de
+      l'importateur en repli) et au compte qui a remonté le lot.
     - met à jour `line.last_sync` en cas de succès.
     - auto-correction : si la durée définitive arrive après un 0 s
-      (synchro pendant l'appel), elle écrase l'ancienne valeur.
+      (synchro pendant l'appel), elle écrase l'ancienne valeur. Les
+      métadonnées manquantes d'un appel déjà connu sont complétées.
     Retourne (created, skipped, updated, fresh) où fresh liste les créés
     (téléphone + direction, 20 max) pour les notifications natives.
     """
@@ -54,6 +57,7 @@ def import_calls(entries, line=None):
     default_country = "223"
     if line is not None and line.number.startswith("+225"):
         default_country = "225"
+    call_site = line.site if line is not None and line.site_id else site
     created, skipped, updated = 0, 0, 0
     fresh = []
     for e in entries:
@@ -79,15 +83,31 @@ def import_calls(entries, line=None):
                 "started_at": started_at,
                 "duration_seconds": duration,
                 "source": "android_app",
+                "line": line,
+                "site": call_site,
+                "imported_by": imported_by,
             },
         )
         if was_created:
             created += 1
             if len(fresh) < 20:
                 fresh.append({"phone_number": phone, "direction": direction})
-        elif duration > obj.duration_seconds:
+            continue
+        changed = []
+        if duration > obj.duration_seconds:
             obj.duration_seconds = duration
-            obj.save(update_fields=["duration_seconds"])
+            changed.append("duration_seconds")
+        if obj.line_id is None and line is not None:
+            obj.line = line
+            changed.append("line")
+        if obj.site_id is None and call_site is not None:
+            obj.site = call_site
+            changed.append("site")
+        if obj.imported_by_id is None and imported_by is not None:
+            obj.imported_by = imported_by
+            changed.append("imported_by")
+        if changed:
+            obj.save(update_fields=changed)
             updated += 1
         else:
             skipped += 1
@@ -105,10 +125,11 @@ def reconcile_call(call_id, window_hours=24):
     phone = normalize_phone(call.phone_number)
     start = call.started_at - timedelta(hours=window_hours)
     end = call.started_at + timedelta(hours=window_hours)
+    filters = {"customer__phone": phone, "created_at__range": (start, end)}
+    if call.site_id:
+        filters["slot__activity__site_id"] = call.site_id
     booking = (
-        Booking.objects.filter(
-            customer__phone=phone, created_at__range=(start, end)
-        ).order_by("created_at").first()
+        Booking.objects.filter(**filters).order_by("created_at").first()
     )
     if booking is not None:
         if booking.call_id is None:

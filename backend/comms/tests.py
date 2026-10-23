@@ -8,6 +8,7 @@ from django.utils import timezone
 from accounts.models import User
 from bookings.services import create_booking
 from catalogue.models import Activity, Site, Slot
+from catalogue.testing import add_fleet
 from clients.models import Customer
 from comms.services import booking_payment_text, log_whatsapp, wa_me_link
 
@@ -19,6 +20,7 @@ class CommsTest(TestCase):
             site=site, name="Quad 1h", duration_minutes=60,
             base_price=20000, deposit=10000, max_group=10,
         )
+        add_fleet(site, quads=5)
         start = timezone.now() + timedelta(days=1)
         self.slot = Slot.objects.create(
             activity=act, start=start, end=start + timedelta(hours=1), capacity=10)

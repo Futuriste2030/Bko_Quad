@@ -11,6 +11,7 @@ from audit.services import expire_overdue, log_action, weekly_report
 from bookings.models import Booking
 from bookings.services import create_booking
 from catalogue.models import Activity, Site, Slot
+from catalogue.testing import add_fleet
 from clients.models import Customer
 
 
@@ -28,6 +29,7 @@ class AuditTest(TestCase):
         act = Activity.objects.create(
             site=site, name="Quad 1h", duration_minutes=60,
             base_price=20000, deposit=10000, max_group=10)
+        add_fleet(site, quads=1)
         start = timezone.now() + timedelta(days=1)
         slot = Slot.objects.create(activity=act, start=start, end=start + timedelta(hours=1), capacity=10)
         cust = Customer.objects.create(name="M. Traoré", phone="+22378803072")
