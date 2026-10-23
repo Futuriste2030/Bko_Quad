@@ -18,3 +18,4 @@ deploy/backups/
 collector-native/.gradle/
 collector-native/local.properties
 collector-native/**/build/
+FONCTIONNALITES_ET_ROLES.txt

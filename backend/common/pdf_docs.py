@@ -1,6 +1,8 @@
 """PDF serveur (reportlab) : reçus, factures, rapprochement bancaire.
 
 Même contenu que l'écran, en vrai PDF à envoyer au client.
+Habillage institutionnel : papier blanc, encre noire, filets nets,
+en-tête entreprise avec logo, totaux soulignés, pied de page paginé.
 """
 
 import io
@@ -17,6 +19,8 @@ BAMAKO = ZoneInfo("Africa/Bamako")
 ACCENT = "#E8590C"
 DARK = "#1a1a1a"
 ZEBRA = "#f4f1ec"
+MUTED = "#5c5c5c"
+LIGHT = "#faf8f2"
 
 
 def fcfa(n):
@@ -80,126 +84,71 @@ def facture_number(seq, site, client, at=None):
     return f"BKO-{code_part(site, 12)}-{code_part(client, 8)}-{d}-{int(seq):04d}"
 
 
+def _draw_page_footer(canvas, doc):
+    """Pied de page institutionnel : référence, date d'édition, pagination."""
+    from reportlab.lib.pagesizes import A4
+    from reportlab.lib.colors import HexColor
+
+    width, height = A4
+    canvas.saveState()
+    canvas.setStrokeColor(HexColor("#b5b0a6"))
+    canvas.setLineWidth(0.5)
+    canvas.line(40, 40, width - 40, 40)
+    canvas.setFont("Helvetica", 8)
+    canvas.setFillColor(HexColor(MUTED))
+    canvas.drawString(40, 26, "BKO Quad Hub — document généré le "
+                     + datetime.now(BAMAKO).strftime("%d/%m/%Y à %H:%M"))
+    canvas.drawRightString(width - 40, 26, f"Page {doc.page}")
+    canvas.restoreState()
+
+
 def _styles():
     from reportlab.lib.colors import HexColor
     from reportlab.lib.styles import ParagraphStyle
     from reportlab.lib.enums import TA_LEFT, TA_RIGHT, TA_CENTER
 
-    base = ParagraphStyle("base", fontName="Helvetica", fontSize=10, leading=13)
+    base = ParagraphStyle("base", fontName="Helvetica", fontSize=10, leading=13,
+                          textColor=HexColor(DARK), spaceAfter=4)
     return {
         "base": base,
         "title": ParagraphStyle("title", parent=base, fontName="Helvetica-Bold",
-                                fontSize=17, leading=20, spaceAfter=2,
+                                fontSize=19, leading=22, spaceAfter=2,
                                 textColor=HexColor(DARK)),
-        "meta": ParagraphStyle("meta", parent=base, fontSize=9, leading=11,
-                               textColor="#333333", spaceAfter=6),
+        "subtitle": ParagraphStyle("subtitle", parent=base, fontName="Helvetica",
+                                    fontSize=9.5, leading=12, spaceAfter=8,
+                                    textColor=HexColor(MUTED)),
         "h1": ParagraphStyle("h1", parent=base, fontName="Helvetica-Bold",
-                             fontSize=15, leading=17, spaceAfter=2),
-        "small": ParagraphStyle("small", parent=base, fontSize=9, leading=11),
+                             fontSize=13, leading=16, spaceAfter=2,
+                             textColor=HexColor(DARK)),
+        "small": ParagraphStyle("small", parent=base, fontSize=9, leading=11,
+                                textColor=HexColor(MUTED)),
         "thanks": ParagraphStyle("thanks", parent=base, fontName="Helvetica-Oblique",
-                                 fontSize=10, leading=13, alignment=TA_CENTER),
+                                  fontSize=10, leading=13, alignment=TA_CENTER,
+                                  textColor=HexColor(MUTED)),
         "right": ParagraphStyle("right", parent=base, alignment=TA_RIGHT),
         "left": ParagraphStyle("left", parent=base, alignment=TA_LEFT),
         "center": ParagraphStyle("center", parent=base, alignment=TA_CENTER),
         "total": ParagraphStyle("total", parent=base, fontName="Helvetica-Bold",
-                                fontSize=11, leading=14),
+                                fontSize=11, leading=14, textColor=HexColor(DARK)),
+        "label": ParagraphStyle("label", parent=base, fontName="Helvetica-Bold",
+                                fontSize=9, leading=11, textColor=HexColor(MUTED)),
     }
 
 
-def _header_flowables(company, title, meta):
-    from reportlab.lib.colors import HexColor
-    from reportlab.platypus import HRFlowable, Paragraph, Spacer, Table, TableStyle
+def _logo_image(height, max_side=120):
+    """Logo complet de l'entreprise (BKO Quad) pour l'en-tête papier."""
+    from reportlab.platypus import Image as RLImage
 
-    st = _styles()
-    out = []
-    info = [Paragraph(company.name or "BKO Quad", st["h1"])]
-    contact = " · ".join(x for x in
-                         [company.address, company.phone, company.email] if x)
-    if contact:
-        info.append(Paragraph(contact, st["small"]))
-    if company.nif or company.rccm:
-        info.append(Paragraph(f"NIF : {company.nif or '—'} · RCCM : {company.rccm or '—'}",
-                              st["small"]))
-    logo = settings.BASE_DIR.parent / "frontend" / "public" / "android-chrome-512x512.png"
-    if logo.exists():
-        thumb = _thumb_image(logo, 56, max_side=128)
-        head = Table([[thumb or "", info]], colWidths=[70, 460])
-    else:
-        head = Table([[info]], colWidths=[530])
-    head.setStyle(TableStyle([
-        ("BACKGROUND", (0, 0), (-1, -1), HexColor("#FAF8F3")),
-        ("BOX", (0, 0), (-1, -1), 1.5, HexColor(DARK)),
-        ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
-        ("LEFTPADDING", (0, 0), (-1, -1), 8),
-        ("RIGHTPADDING", (0, 0), (-1, -1), 8),
-        ("TOPPADDING", (0, 0), (-1, -1), 8),
-        ("BOTTOMPADDING", (0, 0), (-1, -1), 8),
-    ]))
-    out.append(head)
-    out.append(HRFlowable(width="100%", thickness=2, color=HexColor(ACCENT),
-                          spaceAfter=8, spaceBefore=6))
-    out.append(Paragraph(title, st["title"]))
-    out.append(Paragraph(meta, st["meta"]))
-    return out
-
-
-def _section_table(st, title, rows, total_last=False):
-    """Tableau encadré pro : bandeau titre + grille + zébrures."""
-    from reportlab.platypus import Table, TableStyle
-    from reportlab.lib import colors
-
-    data = [[title, ""]] + [[r[0], r[1]] for r in rows]
-    t = Table(data, colWidths=[330, 170])
-    style = [
-        ("FONTNAME", (0, 0), (-1, 0), "Helvetica-Bold"),
-        ("FONTSIZE", (0, 0), (-1, 0), 11),
-        ("TEXTCOLOR", (0, 0), (-1, 0), colors.white),
-        ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor(DARK)),
-        ("TOPPADDING", (0, 0), (-1, 0), 6),
-        ("BOTTOMPADDING", (0, 0), (-1, 0), 6),
-        ("LEFTPADDING", (0, 0), (-1, 0), 8),
-        ("FONTNAME", (0, 1), (-1, -1), "Helvetica"),
-        ("FONTSIZE", (0, 1), (-1, -1), 10),
-        ("GRID", (0, 1), (-1, -1), 0.5, colors.HexColor("#999999")),
-        ("ROWBACKGROUNDS", (0, 1), (-1, -1),
-         [colors.white, colors.HexColor(ZEBRA)]),
-        ("ALIGN", (1, 1), (1, -1), "RIGHT"),
-        ("VALIGN", (0, 0), (-1, -1), "TOP"),
-        ("TOPPADDING", (0, 1), (-1, -1), 4),
-        ("BOTTOMPADDING", (0, 1), (-1, -1), 4),
-        ("LEFTPADDING", (0, 1), (-1, -1), 6),
-        ("RIGHTPADDING", (0, 1), (-1, -1), 6),
+    candidates = [
+        Path(settings.BASE_DIR).parent / "logo_bko_quad.jpeg",
+        Path(settings.BASE_DIR).parent / "frontend" / "public" / "android-chrome-512x512.png",
     ]
-    if total_last:
-        style += [("FONTNAME", (0, -1), (-1, -1), "Helvetica-Bold"),
-                  ("LINEABOVE", (0, -1), (-1, -1), 2, colors.HexColor(ACCENT)),
-                  ("LINEBELOW", (0, -1), (-1, -1), 2, colors.HexColor(ACCENT))]
-    t.setStyle(TableStyle(style))
-    return t
-
-
-def _kv_table(st, rows, total_last=False):
-    from reportlab.platypus import Table, TableStyle
-    from reportlab.lib import colors
-
-    data = [[r[0], r[1]] for r in rows]
-    t = Table(data, colWidths=[330, 170])
-    style = [
-        ("FONTNAME", (0, 0), (-1, -1), "Helvetica"),
-        ("FONTSIZE", (0, 0), (-1, -1), 10),
-        ("LINEBELOW", (0, 0), (-1, -2), 0.5, colors.HexColor("#555555")),
-        ("ROWBACKGROUNDS", (0, 0), (-1, -2), [colors.white, colors.HexColor(ZEBRA)]),
-        ("ALIGN", (1, 0), (1, -1), "RIGHT"),
-        ("VALIGN", (0, 0), (-1, -1), "TOP"),
-        ("TOPPADDING", (0, 0), (-1, -1), 4),
-        ("BOTTOMPADDING", (0, 0), (-1, -1), 4),
-    ]
-    if total_last:
-        style += [("FONTNAME", (0, -1), (-1, -1), "Helvetica-Bold"),
-                  ("LINEABOVE", (0, -1), (-1, -1), 2, colors.HexColor(ACCENT)),
-                  ("LINEBELOW", (0, -1), (-1, -1), 2, colors.HexColor(ACCENT))]
-    t.setStyle(TableStyle(style))
-    return t
+    for src in candidates:
+        if src.exists():
+            img = _thumb_image(src, height, max_side=max_side)
+            if img is not None:
+                return img
+    return None
 
 
 def _thumb_image(source, height, max_side=400):
@@ -238,7 +187,114 @@ def _media_image(path, height):
     full = Path(settings.MEDIA_ROOT) / str(path)
     if not full.exists():
         return None
-    return _thumb_image(full, height)
+    return _thumb_image(full, height, max_side=200)
+
+
+def _header_flowables(company, title, meta):
+    from reportlab.lib.colors import HexColor
+    from reportlab.platypus import HRFlowable, Paragraph, Spacer, Table, TableStyle
+
+    st = _styles()
+    out = []
+    # Bandeau d'accent en tête de page.
+    out.append(HRFlowable(width="100%", thickness=3, color=HexColor(ACCENT),
+                          spaceAfter=10, spaceBefore=0))
+    logo = _logo_image(58)
+    info = [Paragraph(company.name or "BKO Quad", st["h1"])]
+    contact = " · ".join(x for x in [company.address, company.phone, company.email] if x)
+    if contact:
+        info.append(Paragraph(contact, st["small"]))
+    if company.nif or company.rccm:
+        info.append(Paragraph(
+            f"NIF : {company.nif or '—'} · RCCM : {company.rccm or '—'}",
+            st["small"]))
+    if logo is not None:
+        head = Table([[logo, info]], colWidths=[105, 425])
+    else:
+        head = Table([[info]], colWidths=[530])
+    head.setStyle(TableStyle([
+        ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
+        ("LEFTPADDING", (0, 0), (-1, -1), 0),
+        ("RIGHTPADDING", (0, 0), (-1, -1), 0),
+        ("TOPPADDING", (0, 0), (-1, -1), 0),
+        ("BOTTOMPADDING", (0, 0), (-1, -1), 6),
+    ]))
+    out.append(head)
+    out.append(HRFlowable(width="100%", thickness=1.2, color=HexColor(DARK),
+                          spaceAfter=12, spaceBefore=2))
+    # Titre du document + méta.
+    out.append(Paragraph(title, st["title"]))
+    out.append(Paragraph(meta, st["subtitle"]))
+    out.append(HRFlowable(width="100%", thickness=0.6, color=HexColor("#b5b0a6"),
+                          spaceAfter=12, spaceBefore=2, dash=(4, 3)))
+    return out
+
+
+def _section_table(st, title, rows, total_last=False):
+    """Tableau encadré pro : bandeau titre + grille + zébrures."""
+    from reportlab.platypus import Table, TableStyle
+    from reportlab.lib import colors
+    from reportlab.lib.colors import HexColor
+
+    data = [[title, ""]] + [[r[0], r[1]] for r in rows]
+    t = Table(data, colWidths=[360, 170])
+    style = [
+        ("FONTNAME", (0, 0), (-1, 0), "Helvetica-Bold"),
+        ("FONTSIZE", (0, 0), (-1, 0), 10),
+        ("TEXTCOLOR", (0, 0), (-1, 0), colors.white),
+        ("BACKGROUND", (0, 0), (-1, 0), HexColor(DARK)),
+        ("TOPPADDING", (0, 0), (-1, 0), 6),
+        ("BOTTOMPADDING", (0, 0), (-1, 0), 6),
+        ("LEFTPADDING", (0, 0), (-1, 0), 8),
+        ("RIGHTPADDING", (0, 0), (-1, 0), 8),
+        ("FONTNAME", (0, 1), (-1, -1), "Helvetica"),
+        ("FONTSIZE", (0, 1), (-1, -1), 10),
+        ("GRID", (0, 1), (-1, -1), 0.4, HexColor("#b5b0a6")),
+        ("ROWBACKGROUNDS", (0, 1), (-1, -1),
+         [colors.white, HexColor(LIGHT)]),
+        ("ALIGN", (1, 1), (1, -1), "RIGHT"),
+        ("VALIGN", (0, 0), (-1, -1), "TOP"),
+        ("TOPPADDING", (0, 1), (-1, -1), 5),
+        ("BOTTOMPADDING", (0, 1), (-1, -1), 5),
+        ("LEFTPADDING", (0, 1), (-1, -1), 8),
+        ("RIGHTPADDING", (0, 1), (-1, -1), 8),
+    ]
+    if total_last:
+        style += [("FONTNAME", (0, -1), (-1, -1), "Helvetica-Bold"),
+                  ("LINEABOVE", (0, -1), (-1, -1), 1.5, HexColor(ACCENT)),
+                  ("LINEBELOW", (0, -1), (-1, -1), 1.5, HexColor(ACCENT)),
+                  ("BACKGROUND", (0, -1), (-1, -1), HexColor(ZEBRA))]
+    t.setStyle(TableStyle(style))
+    return t
+
+
+def _kv_table(st, rows, total_last=False):
+    from reportlab.platypus import Table, TableStyle
+    from reportlab.lib import colors
+    from reportlab.lib.colors import HexColor
+
+    data = [[r[0], r[1]] for r in rows]
+    t = Table(data, colWidths=[360, 170])
+    style = [
+        ("FONTNAME", (0, 0), (-1, -1), "Helvetica"),
+        ("FONTSIZE", (0, 0), (-1, -1), 10),
+        ("LINEBELOW", (0, 0), (-1, -2), 0.4, HexColor("#b5b0a6")),
+        ("ROWBACKGROUNDS", (0, 0), (-1, -2),
+         [colors.white, HexColor(LIGHT)]),
+        ("ALIGN", (1, 0), (1, -1), "RIGHT"),
+        ("VALIGN", (0, 0), (-1, -1), "TOP"),
+        ("TOPPADDING", (0, 0), (-1, -1), 5),
+        ("BOTTOMPADDING", (0, 0), (-1, -1), 5),
+        ("LEFTPADDING", (0, 0), (-1, -1), 8),
+        ("RIGHTPADDING", (0, 0), (-1, -1), 8),
+    ]
+    if total_last:
+        style += [("FONTNAME", (0, -1), (-1, -1), "Helvetica-Bold"),
+                  ("LINEABOVE", (0, -1), (-1, -1), 1.5, HexColor(ACCENT)),
+                  ("LINEBELOW", (0, -1), (-1, -1), 1.5, HexColor(ACCENT)),
+                  ("BACKGROUND", (0, -1), (-1, -1), HexColor(ZEBRA))]
+    t.setStyle(TableStyle(style))
+    return t
 
 
 def _footer_flowables(company, booking):
@@ -246,19 +302,14 @@ def _footer_flowables(company, booking):
     from reportlab.platypus import Paragraph, Spacer, Table, TableStyle
 
     st = _styles()
-    left = [_qr_image(f"BKO:{booking.code}:{booking.qr_token}"),
+    left = [_qr_image(f"BKO:{booking.code}:{booking.qr_token}", size=90),
             Paragraph(booking.code, st["center"])]
     thanks = company.thanks or "Merci de votre confiance."
     suffix = f" — {company.signature_name}" if company.signature_name else ""
     right = [Paragraph(f"{thanks}{suffix}", st["thanks"])]
-    stamp = _media_image(company.stamp, 84)
-    sign = _media_image(company.signature, 72)
-    if stamp or sign:
-        right.append(Spacer(1, 4))
-        right.append(Table([[stamp or "", sign or ""]], colWidths=[165, 165]))
     box = Table([[left, right]], colWidths=[150, 380])
     box.setStyle(TableStyle([
-        ("BACKGROUND", (0, 0), (-1, -1), HexColor("#FAF8F3")),
+        ("BACKGROUND", (0, 0), (-1, -1), HexColor(LIGHT)),
         ("BOX", (0, 0), (-1, -1), 1.5, HexColor(DARK)),
         ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
         ("LEFTPADDING", (0, 0), (-1, -1), 10),
@@ -266,7 +317,40 @@ def _footer_flowables(company, booking):
         ("TOPPADDING", (0, 0), (-1, -1), 8),
         ("BOTTOMPADDING", (0, 0), (-1, -1), 8),
     ]))
-    return [Spacer(1, 12), box]
+    out = [Spacer(1, 12), box]
+
+    # Bloc cachet + signature de l'entreprise, bien positionnés.
+    stamp = _media_image(company.stamp, 55)
+    sign = _media_image(company.signature, 45)
+    if stamp or sign:
+        from reportlab.platypus import KeepTogether
+        block = []
+        block.append(Spacer(1, 8))
+        block.append(Paragraph("Cachet et signature de l'entreprise",
+                             st["label"]))
+        block.append(Spacer(1, 3))
+        sig_table = Table(
+            [[stamp or Paragraph("Cachet", st["small"]),
+              sign or Paragraph("Signature", st["small"])]],
+            colWidths=[265, 265])
+        sig_table.setStyle(TableStyle([
+            ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
+            ("ALIGN", (0, 0), (-1, -1), "CENTER"),
+            ("LEFTPADDING", (0, 0), (-1, -1), 6),
+            ("RIGHTPADDING", (0, 0), (-1, -1), 6),
+            ("TOPPADDING", (0, 0), (-1, -1), 3),
+            ("BOTTOMPADDING", (0, 0), (-1, -1), 3),
+            ("BOX", (0, 0), (0, 0), 1, HexColor("#b5b0a6")),
+            ("BOX", (1, 0), (1, 0), 1, HexColor("#b5b0a6")),
+        ]))
+        block.append(sig_table)
+        name_line = company.signature_name or company.name or "BKO Quad"
+        block.append(Spacer(1, 3))
+        block.append(Paragraph(
+            f"{name_line} · {bamako_date(datetime.now(BAMAKO))}",
+            st["small"]))
+        out.append(KeepTogether(block))
+    return out
 
 
 def _render(filename_title, flowables):
@@ -274,9 +358,10 @@ def _render(filename_title, flowables):
     from reportlab.platypus import SimpleDocTemplate, Spacer
 
     buf = io.BytesIO()
-    doc = SimpleDocTemplate(buf, pagesize=A4, leftMargin=36, rightMargin=36,
-                            topMargin=36, bottomMargin=36, title=filename_title)
-    doc.build(flowables + [Spacer(1, 12)])
+    doc = SimpleDocTemplate(buf, pagesize=A4, leftMargin=40, rightMargin=40,
+                            topMargin=40, bottomMargin=50, title=filename_title)
+    doc.build(flowables + [Spacer(1, 12)],
+             onFirstPage=_draw_page_footer, onLaterPages=_draw_page_footer)
     buf.seek(0)
     return buf.read()
 
@@ -399,6 +484,7 @@ def pdf_recu(booking_id):
         company, f"REÇU DE PAIEMENT {booking.code}",
         f"Émis le {bamako_date(datetime.now(BAMAKO))} · Réservation {booking.code} · "
         f"Statut : {booking.get_status_display()}")
+    # Bloc client.
     flow.append(_section_table(st, "CLIENT", [
         ("Prénom", first), ("Nom", last),
         ("Téléphone", ctx["booking"].customer.phone or "—"),
@@ -414,7 +500,7 @@ def pdf_recu(booking_id):
     rows += [("Total net à payer", fcfa(booking.total)),
              ("Payé (comptant, sur place)", fcfa(ctx["paid"])),
              ("Reste dû", fcfa(max(0, booking.total - ctx["paid"])))]
-    flow.append(_section_table(st, "DÉTAIL", rows, total_last=True))
+    flow.append(_section_table(st, "DÉTAIL DE LA COMMANDE", rows, total_last=True))
     if ctx["pays"]:
         flow.append(Paragraph(f"Règlement : {ctx['pays'][0].reference}", st["small"]))
     else:
@@ -451,7 +537,7 @@ def pdf_facture(booking_id):
         rows += [("Sous-total", fcfa(brut)),
                  ("Remise manuelle", f"− {fcfa(remise)}")]
     rows.append(("Total net facturé", fcfa(booking.total)))
-    flow.append(_section_table(st, "DÉTAIL", rows, total_last=True))
+    flow.append(_section_table(st, "DÉTAIL DE LA COMMANDE", rows, total_last=True))
     flow += _footer_flowables(company, booking)
     return f"facture-{fnum}.pdf", _render(f"Facture {fnum}", flow)
 
@@ -460,6 +546,7 @@ def pdf_bank_report(*, year, month, bank=None, site_name=None, rows, balance,
                     deposits, withdrawals, fees=0, statement=None):
     from reportlab.platypus import Paragraph, Spacer, Table, TableStyle
     from reportlab.lib import colors
+    from reportlab.lib.colors import HexColor
 
     from common.models import CompanyProfile
 
@@ -490,16 +577,18 @@ def pdf_bank_report(*, year, month, bank=None, site_name=None, rows, balance,
     t.setStyle(TableStyle([
         ("FONTNAME", (0, 0), (-1, 0), "Helvetica-Bold"),
         ("FONTSIZE", (0, 0), (-1, -1), 8),
-        ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor(DARK)),
+        ("BACKGROUND", (0, 0), (-1, 0), HexColor(DARK)),
         ("TEXTCOLOR", (0, 0), (-1, 0), colors.white),
-        ("ROWBACKGROUNDS", (0, 1), (-1, -1), [colors.white, colors.HexColor(ZEBRA)]),
-        ("LINEBELOW", (0, 0), (-1, 0), 1.5, colors.HexColor(ACCENT)),
-        ("LINEBELOW", (0, 1), (-1, -1), 0.4, colors.HexColor("#888888")),
+        ("ROWBACKGROUNDS", (0, 1), (-1, -1), [colors.white, HexColor(LIGHT)]),
+        ("LINEBELOW", (0, 0), (-1, 0), 1.5, HexColor(ACCENT)),
+        ("LINEBELOW", (0, 1), (-1, -1), 0.4, HexColor("#b5b0a6")),
         ("ALIGN", (5, 0), (-1, -1), "RIGHT"),
         ("VALIGN", (0, 0), (-1, -1), "TOP"),
         ("TOPPADDING", (0, 0), (-1, -1), 3),
         ("BOTTOMPADDING", (0, 0), (-1, -1), 3),
-        ("BOX", (0, 0), (-1, -1), 1.2, colors.HexColor(DARK)),
+        ("LEFTPADDING", (0, 0), (-1, -1), 4),
+        ("RIGHTPADDING", (0, 0), (-1, -1), 4),
+        ("BOX", (0, 0), (-1, -1), 1.2, HexColor(DARK)),
     ]))
     flow.append(t)
     flow.append(Spacer(1, 8))
