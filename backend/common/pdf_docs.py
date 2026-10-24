@@ -145,8 +145,16 @@ def _logo_image(height, max_side=200):
     from PIL import Image as PILImage
     from reportlab.platypus import Image as RLImage
 
-    src = Path(settings.BASE_DIR).parent / "logo_bko_quad.jpeg"
-    if src.exists():
+    # Cherche d'abord dans backend/ (prod : copié avec COPY backend/),
+    # puis à la racine du dépôt (dev local).
+    for candidate in (Path(settings.BASE_DIR) / "logo_bko_quad.jpeg",
+                      Path(settings.BASE_DIR).parent / "logo_bko_quad.jpeg"):
+        if candidate.exists():
+            src = candidate
+            break
+    else:
+        src = None
+    if src is not None and src.exists():
         try:
             rgb = PILImage.open(src).convert("RGB")
             grey = rgb.convert("L")
