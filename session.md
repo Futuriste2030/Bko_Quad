@@ -360,6 +360,9 @@ Objectif : pilote propre, argent tracé, sauvegardes avant la première vente r�
 - Clôture : commande `verifier_cloture` (état des dernières clôtures +
   rattrapage) et test de la planification Celery beat (20h, rattrapage 3h).
 - Tests : 178/178 OK ; build PWA OK ; `makemigrations --check` propre.
+- DEMAIN — Site web client (phase 3) : démarrer le front public (Next.js) sur la
+  même API, réservation en ligne, QR check-in. Back déjà prêt (API v1, JWT,
+  permissions). Préparer le dépôt frontend-web/ et les types partagés.
 - Lot PDF institutionnel : refonte de `common/pdf_docs.py` (en-tête entreprise avec
   logo `logo_bko_quad.jpeg`, filets nets, totaux soulignés en accent, pied de page
   paginé avec date d'édition, réduction du poids via vignettes 120/200 px pour
