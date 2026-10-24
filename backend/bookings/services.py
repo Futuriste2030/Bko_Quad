@@ -395,6 +395,13 @@ def create_booking(*, customer, slot_id, persons, quads=1, source="phone", creat
                                 "resource_type": resource_type,
                                 "quads": total_quads,
                             })
+                    # Facture automatique : chaque réservation reçoit son numéro
+                    # séquentiel sans trou dès sa création (idempotent).
+                    try:
+                        from payments.services import issue_invoice
+                        issue_invoice(booking_id=b.id)
+                    except Exception:
+                        pass
                     return b
             except IntegrityError:
                 # Code déjà pris (proposition de l'appareil) : on regénère.

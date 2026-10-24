@@ -56,7 +56,7 @@ export default function Invoices() {
       setNumbers((m) => ({ ...m, [b.id]: inv.number }));
       if (inv.queued) notify('warning', 'Facture programmée', 'Le numéro sera attribué à la synchronisation.');
       else notify('success', 'Facture émise', `${b.code} → ${inv.number}.`);
-    } catch (e) { notify('error', 'Ã‰mission impossible', e instanceof Error ? e.message : ''); }
+    } catch (e) { notify('error', 'Émission impossible', e instanceof Error ? e.message : ''); }
     finally { setBusy(false); }
   }
 
@@ -115,12 +115,12 @@ export default function Invoices() {
                 </div>
                 <div className="row-top">
                   <strong className="num">{fcfa(b.total)}</strong>
-                  <span className="small muted num">{numbers[b.id] ? `Facture NÂ° ${String(numbers[b.id]).padStart(4, '0')}` : 'Sans facture'}</span>
-                  <span className="small num">Payé : {fcfa(paid[b.id] ?? 0)} Â· Reste : {fcfa(rest)}</span>
+                  <span className="small muted num">{numbers[b.id] ? `Facture N° ${String(numbers[b.id]).padStart(4, '0')}` : 'Sans facture'}</span>
+                  <span className="small num">Payé : {fcfa(paid[b.id] ?? 0)} · Reste : {fcfa(rest)}</span>
                 </div>
                 <div className="btn-row">
                   {b.total === 0 ? (
-                    <span className="small muted">Montant nul (ancienne saisie) — à annuler depuis Réservations, motif Â« erreur de saisie Â».</span>
+                    <span className="small muted">Montant nul (ancienne saisie) — à annuler depuis Réservations, motif « erreur de saisie ».</span>
                   ) : (
                     <>
                       {!numbers[b.id] && (

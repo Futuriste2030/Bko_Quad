@@ -11,7 +11,7 @@ import { useAuth } from '../lib/auth';
 import { useCompany } from '../lib/company';
 import { useToast } from '../lib/toast';
 import {
-  downloadPdf, issueInvoice, listActivities, listBookings, listCustomers, listInvoices, listPayments, listSites, listSlots, listVehicles, logMessage, setBookingVehicles,
+  downloadPdf, listActivities, listBookings, listCustomers, listInvoices, listPayments, listSites, listSlots, listVehicles, logMessage, setBookingVehicles,
   type Activity, type Booking, type Customer, type Invoice, type Payment, type Site, type Slot, type Vehicle,
 } from '../lib/api';
 import { factureNumber, fcfa, fmtPhone, fmtSlot, norm, dureeLibelle } from '../lib/format';
@@ -23,7 +23,7 @@ import { mediaUrl } from '../lib/api';
    Facture = total, numéro séquentiel sans trou. */
 type Kind = 'recu' | 'facture';
 
-/* Paiement comptant sur place : pas de partie Â« conditions Â» sur le reçu ni la facture.
+/* Paiement comptant sur place : pas de partie « conditions » sur le reçu ni la facture.
    Détail commande : personnes, quads (solo 25 000 / duo 30 000), nÂ° des quads, prix. */
 const PRICE_SOLO_QUAD = 25000;
 const PRICE_DUO_QUAD = 30000;
@@ -64,7 +64,7 @@ export default function Document() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
-  // Correction a posteriori : fige les NÂ° d'engins (anciens reçus), tracée serveur.
+  // Correction a posteriori : fige les N° d'engins (anciens reçus), tracée serveur.
   const [assignOpen, setAssignOpen] = useState(false);
   const [picked, setPicked] = useState<number[]>([]);
 
@@ -91,16 +91,6 @@ export default function Document() {
       .finally(() => setLoading(false));
   }, [id]);
 
-  async function emit() {
-  if (!booking) return;
-    setBusy(true);
-    try {
-      const inv = await issueInvoice(booking.id);
-      setInvoice(inv);
-      notify('success', 'Facture émise', `NÂ° ${factureNumber(inv.number, site?.name ?? '', customer?.name ?? '')}.`);
-    } catch (e) { notify('error', 'Ã‰mission impossible', e instanceof Error ? e.message : ''); }
-    finally { setBusy(false); }
-  }
 
   const fNum = invoice ? factureNumber(invoice.number, site?.name ?? '', customer?.name ?? '', new Date(invoice.issued_at)) : '';
   /* Immatriculations : engins affectés à la réservation, sinon ceux du créneau. */
@@ -112,7 +102,7 @@ export default function Document() {
   async function download() {
   if (!booking) return;
     if (doc === 'facture' && !invoice) {
-  notify('warning', 'Facture non émise', 'Ã‰mettez la facture avant de la télécharger.');
+  notify('warning', 'Facture non émise', 'Émettez la facture avant de la télécharger.');
       return;
     }
     setBusy(true);
@@ -124,7 +114,7 @@ export default function Document() {
     finally { setBusy(false); }
   }
 
-  /* Engins du site en service : correction des NÂ° (anciens reçus), tracée. */
+  /* Engins du site en service : correction des N° (anciens reçus), tracée. */
   const siteVehicles = (activity && vehicles.filter((v) => v.status === 'en_service' && v.site === activity.site)
     .sort((a, b) => a.plate.localeCompare(b.plate))) || [];
 
@@ -211,8 +201,8 @@ export default function Document() {
             const brut = (booking.lines ?? []).reduce((s, l) => s + l.line_total, 0);
             const remise = booking.discount_total ?? 0;
             const facturationLabel = units > 1
-              ? `${dureeLibelle(slotMin)} = ${units} Ã— ${unitLabel}`
-              : `${unitLabel} (formule Â« ${activity?.name ?? '—'} Â»)`;
+              ? `${dureeLibelle(slotMin)} = ${units} × ${unitLabel}`
+              : `${unitLabel} (formule « ${activity?.name ?? '—'} »)`;
             return (
               <>
                 <div className="leader"><span>Facturation</span><span className="dots" aria-hidden="true" /><strong>{facturationLabel}</strong></div>
@@ -224,7 +214,7 @@ export default function Document() {
                 {docLines ? (
                   <>
                     {docLines.map((l) => (
-                      <div className="leader" key={l.rank}><span>Ligne {l.rank} — {l.persons} pers., {l.quads} {engins}{l.quads > 1 ? 's' : ''}{units > 1 ? ` Â· ${units} Ã— ${unitLabel}` : ''}</span><span className="dots" aria-hidden="true" /><strong className="num">{fcfa(l.line_total)}</strong></div>
+                      <div className="leader" key={l.rank}><span>Ligne {l.rank} — {l.persons} pers., {l.quads} {engins}{l.quads > 1 ? 's' : ''}{units > 1 ? ` · ${units} × ${unitLabel}` : ''}</span><span className="dots" aria-hidden="true" /><strong className="num">{fcfa(l.line_total)}</strong></div>
                     ))}
                     {remise > 0 && (
                       <>
@@ -241,28 +231,24 @@ export default function Document() {
                 <div className="leader"><span>Personnes</span><span className="dots" aria-hidden="true" /><strong className="num">{booking.persons}</strong></div>
                 <div className="leader"><span>{velo ? 'Vélos' : 'Quads'}</span><span className="dots" aria-hidden="true" /><strong className="num">{booking.quads}{!kids && !velo && parts.duo > 0 && parts.solo >= 0 ? ` (${parts.solo} solo + ${parts.duo} duo)` : ''}</strong></div>
                 {kids || velo ? (
-                  <div className="leader"><span>{velo ? 'Vélo' : 'Quad enfant'} — {booking.persons} Ã— {fcfa(booking.unit_price)}</span><span className="dots" aria-hidden="true" /><strong className="num">{fcfa(booking.total)}</strong></div>
+                  <div className="leader"><span>{velo ? 'Vélo' : 'Quad enfant'} — {booking.persons} × {fcfa(booking.unit_price)}</span><span className="dots" aria-hidden="true" /><strong className="num">{fcfa(booking.total)}</strong></div>
                 ) : (
                   <>
-                    {parts.solo > 0 && <div className="leader"><span>Quads solo (1 pers.) — {parts.solo} Ã— {fcfa(PRICE_SOLO_QUAD)}</span><span className="dots" aria-hidden="true" /><strong className="num">{fcfa(parts.solo * PRICE_SOLO_QUAD)}</strong></div>}
-                    {parts.duo > 0 && <div className="leader"><span>Quads duo (2 pers.) — {parts.duo} Ã— {fcfa(PRICE_DUO_QUAD)}</span><span className="dots" aria-hidden="true" /><strong className="num">{fcfa(parts.duo * PRICE_DUO_QUAD)}</strong></div>}
+                    {parts.solo > 0 && <div className="leader"><span>Quads solo (1 pers.) — {parts.solo} × {fcfa(PRICE_SOLO_QUAD)}</span><span className="dots" aria-hidden="true" /><strong className="num">{fcfa(parts.solo * PRICE_SOLO_QUAD)}</strong></div>}
+                    {parts.duo > 0 && <div className="leader"><span>Quads duo (2 pers.) — {parts.duo} × {fcfa(PRICE_DUO_QUAD)}</span><span className="dots" aria-hidden="true" /><strong className="num">{fcfa(parts.duo * PRICE_DUO_QUAD)}</strong></div>}
                   </>
                 )}
                   </>
                 )}
-                {pl.length > 0 && <div className="leader"><span>NÂ° des engins</span><span className="dots" aria-hidden="true" /><strong className="num">{pl.join(', ')}</strong></div>}
+                {pl.length > 0 && <div className="leader"><span>N° des engins</span><span className="dots" aria-hidden="true" /><strong className="num">{pl.join(', ')}</strong></div>}
               </>
             );
           })()}
           {doc === 'facture' ? (
             <>
               <div className="leader"><span>Montant facturé</span><span className="dots" aria-hidden="true" /><strong className="num">{fcfa(booking.total)}</strong></div>
-              {!invoice ? (
-                <button type="button" className="btn btn-primary no-print" onClick={emit} disabled={busy} style={{ marginTop: 12 }}>
-                  {busy && <span className="caret" aria-hidden="true" />}Ã‰mettre la facture
-                </button>
-              ) : (
-                <div className="leader"><span>Ã‰mise le</span><span className="dots" aria-hidden="true" /><strong className="num">{new Date(invoice.issued_at).toLocaleDateString('fr-FR')}</strong></div>
+              {invoice && (
+                <div className="leader"><span>Émise le</span><span className="dots" aria-hidden="true" /><strong className="num">{new Date(invoice.issued_at).toLocaleDateString('fr-FR')}</strong></div>
               )}
             </>
           ) : (
@@ -291,11 +277,11 @@ export default function Document() {
             )}
           </div>
           <div className="no-print" style={{ marginTop: 12 }}>
-            <div className="leader"><span>Engins affectés (NÂ°)</span><span className="dots" aria-hidden="true" /><strong className="num">{docPlates.length > 0 ? docPlates.join(', ') : '—'}</strong></div>
-            {docPlates.length === 0 && <p className="small muted">Ancien document sans immatriculations : figez les NÂ° utilisés, ils apparaîtront ici et sur le PDF.</p>}
+            <div className="leader"><span>Engins affectés (N°)</span><span className="dots" aria-hidden="true" /><strong className="num">{docPlates.length > 0 ? docPlates.join(', ') : '—'}</strong></div>
+            {docPlates.length === 0 && <p className="small muted">Ancien document sans immatriculations : figez les N° utilisés, ils apparaîtront ici et sur le PDF.</p>}
             {mayAssign && !assignOpen && (
               <button type="button" className="btn btn-sm btn-ghost" onClick={openAssign} disabled={busy} style={{ marginTop: 8 }}>
-                <Icon name="plus" size={16} />{docPlates.length > 0 ? 'Corriger les NÂ°' : 'Affecter les NÂ°'}
+                <Icon name="plus" size={16} />{docPlates.length > 0 ? 'Corriger les N°' : 'Affecter les N°'}
               </button>
             )}
             {mayAssign && assignOpen && (
@@ -305,7 +291,7 @@ export default function Document() {
                   {siteVehicles.map((v) => (
                     <label key={v.id} className="slot" aria-checked={picked.includes(v.id)}>
                       <input type="checkbox" checked={picked.includes(v.id)} onChange={togglePick.bind(null, v.id)} />
-                      <span><strong className="num">{v.plate}</strong><br /><small>{v.model} Â· {v.type === 'velo' ? 'Vélo' : 'Quad'}</small></span>
+                      <span><strong className="num">{v.plate}</strong><br /><small>{v.model} · {v.type === 'velo' ? 'Vélo' : 'Quad'}</small></span>
                     </label>
                   ))}
                   {siteVehicles.length === 0 && <p>Aucun engin en service sur ce site. Voyez la Flotte.</p>}

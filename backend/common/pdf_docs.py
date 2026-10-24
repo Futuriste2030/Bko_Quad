@@ -135,19 +135,39 @@ def _styles():
     }
 
 
-def _logo_image(height, max_side=120):
-    """Logo complet de l'entreprise (BKO Quad) pour l'en-tête papier."""
+def _logo_image(height, max_side=200):
+    """Logo complet de l'entreprise (BKO Quad) pour l'en-tête papier.
+
+    Le JPEG source contient une marge blanche importante : on recadre sur la
+    boîte englobante du logo avant mise à l'échelle, pour qu'il soit bien
+    visible sur le PDF.
+    """
+    from PIL import Image as PILImage
     from reportlab.platypus import Image as RLImage
 
-    candidates = [
-        Path(settings.BASE_DIR).parent / "logo_bko_quad.jpeg",
-        Path(settings.BASE_DIR).parent / "frontend" / "public" / "android-chrome-512x512.png",
-    ]
-    for src in candidates:
-        if src.exists():
-            img = _thumb_image(src, height, max_side=max_side)
-            if img is not None:
-                return img
+    src = Path(settings.BASE_DIR).parent / "logo_bko_quad.jpeg"
+    if src.exists():
+        try:
+            im = PILImage.open(src).convert("RGB")
+            bbox = im.point(lambda x: 0 if x > 200 else 255, mode="1").getbbox()
+            if bbox:
+                im = im.crop(bbox)
+            buf = io.BytesIO()
+            im.save(buf, format="PNG")
+            buf.seek(0)
+            out = RLImage(buf, height=height)
+            out.drawWidth = out.imageWidth * (height / out.imageHeight)
+            out.drawHeight = height
+            if out.drawWidth > max_side:
+                scale = max_side / out.drawWidth
+                out.drawWidth = max_side
+                out.drawHeight = height * scale
+            return out
+        except Exception:
+            pass
+    fallback = Path(settings.BASE_DIR).parent / "frontend" / "public" / "android-chrome-512x512.png"
+    if fallback.exists():
+        return _thumb_image(fallback, height, max_side=max_side)
     return None
 
 
@@ -199,7 +219,7 @@ def _header_flowables(company, title, meta):
     # Bandeau d'accent en tête de page.
     out.append(HRFlowable(width="100%", thickness=3, color=HexColor(ACCENT),
                           spaceAfter=10, spaceBefore=0))
-    logo = _logo_image(58)
+    logo = _logo_image(60)
     info = [Paragraph(company.name or "BKO Quad", st["h1"])]
     contact = " · ".join(x for x in [company.address, company.phone, company.email] if x)
     if contact:

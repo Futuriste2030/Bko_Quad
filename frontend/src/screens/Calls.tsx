@@ -120,14 +120,14 @@ export default function Calls() {
   return (
     <AppShell anomalies={openCount}>
       <PageHeader title="Appels" sub="Journal d’appels. Chaque appel est rapproché ou justifié — aucune anomalie ne disparaît seule." />
-      <p className="small muted">Actualisé{updatedAt ? ` à ${updatedAt.toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit', second: '2-digit', timeZone: 'Africa/Bamako' })}` : ''} Â· auto toutes les 15 s.</p>
+      <p className="small muted">Actualisé{updatedAt ? ` à ${updatedAt.toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit', second: '2-digit', timeZone: 'Africa/Bamako' })}` : ''} · auto toutes les 15 s.</p>
       <section className="card" aria-label="Numéros suivis">
         <h2>Numéros d’entreprise suivis</h2>
         <p className="small muted">Remontée auto par l’APK collecteur (Mali +223, Côte d’Ivoire +225). Seuls responsable et admin gèrent les lignes.</p>
         <div className="list" style={{ marginTop: 8 }}>
           {lines.filter((l) => l.active).map((l) => (
             <div className="row-top" key={l.id}>
-              <span><strong>{l.label}</strong> <span className="num muted">{fmtPhone(l.number)}</span>{l.site_name ? <span className="small muted"> Â· {l.site_name}</span> : null}{l.last_sync ? <span className="small muted"> Â· synchro {fmtSlot(l.last_sync)}</span> : <span className="small muted"> Â· jamais synchronisé</span>}</span>
+              <span><strong>{l.label}</strong> <span className="num muted">{fmtPhone(l.number)}</span>{l.site_name ? <span className="small muted"> · {l.site_name}</span> : null}{l.last_sync ? <span className="small muted"> · synchro {fmtSlot(l.last_sync)}</span> : <span className="small muted"> · jamais synchronisé</span>}</span>
               {mayLines && <button type="button" className="btn btn-sm btn-ghost" onClick={() => flipLine(l)}>Suspendre</button>}
             </div>
           ))}
@@ -181,7 +181,7 @@ export default function Calls() {
                   <span className="row-title num">{fmtPhone(c.phone_number)}</span>
                   {an
                     ? <span className="badge badge-anomaly"><Icon name="alert" size={14} />Anomalie ouverte</span>
-                    : <span className="badge badge-completed"><Icon name="check" size={14} />Ã€ rapprocher</span>}
+                    : <span className="badge badge-completed"><Icon name="check" size={14} />À rapprocher</span>}
                 </div>
                 <div className="row-meta"><span className="num">{fmtSlot(c.started_at)}</span><span className="num">{c.duration_seconds} s</span><span>{fmtDirection(c.direction)}</span></div>
                 <div className="small muted">

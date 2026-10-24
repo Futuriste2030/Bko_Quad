@@ -21,7 +21,7 @@ import { showSystemNotification } from '../lib/notifpref';
 
 /* Contrôle du guide : scan d'arrivée (confirmée → arrivée, minuteur lancé
    sur la durée de la formule), puis second scan de fin (arrivée → terminée).
-   Ã€ la fin du minuteur, l'app alerte : scannez pour clôturer. */
+   À la fin du minuteur, l'app alerte : scannez pour clôturer. */
 export default function Scanner() {
   const link = useSiteLink();
   const { notify } = useToast();
@@ -163,7 +163,7 @@ export default function Scanner() {
       if (!alive) return;
       if (ok) {
   setPlaying(true);
-        if (video.videoWidth > 0) setRes(`${video.videoWidth}Ã—${video.videoHeight}`);
+        if (video.videoWidth > 0) setRes(`${video.videoWidth}×${video.videoHeight}`);
         return;
       }
       /* Noir persistant : on libère et on tente l'autre caméra. */
@@ -329,7 +329,7 @@ export default function Scanner() {
                   <div className="row-top">
                     <span className="row-title num">{r.code}</span>
                     <strong className={`num ${left <= 0 ? 'badge badge-pending_deposit' : ''}`} aria-label={left <= 0 ? 'Durée écoulée' : 'Temps restant'}>
-                      {left <= 0 ? 'Ã€ clôturer' : fmtCountdown(left)}
+                      {left <= 0 ? 'À clôturer' : fmtCountdown(left)}
                     </strong>
                   </div>
                   <div className="meter" role="progressbar" aria-valuenow={Math.round(100 - pct)} aria-valuemin={0} aria-valuemax={100} aria-label={`Progression de ${r.code}`}>
@@ -357,7 +357,7 @@ export default function Scanner() {
               onPlaying={(e) => {
                 setPlaying(true);
                 const v = e.currentTarget;
-                if (v.videoWidth > 0) setRes(`${v.videoWidth}Ã—${v.videoHeight}`);
+                if (v.videoWidth > 0) setRes(`${v.videoWidth}×${v.videoHeight}`);
               }}
               onWaiting={() => setPlaying(false)} />
           </div>
@@ -378,7 +378,7 @@ export default function Scanner() {
             <StatusBadge status={found.status} />
           </div>
           <hr className="divider" />
-          <div className="row-meta"><span className="num">{fmtSlot(found.expires_at)}</span><span className="num">{found.persons} pers. Â· {found.quads} quads</span></div>
+          <div className="row-meta"><span className="num">{fmtSlot(found.expires_at)}</span><span className="num">{found.persons} pers. · {found.quads} quads</span></div>
           <div className="row-top"><strong className="num">{fcfa(found.total)}</strong><span className="small muted num">Reste dû : {fcfa(Math.max(0, found.total - found.deposit_due))}</span></div>
           {found.status === 'checked_in' && getRide(found.code) && (
             <div className="row-meta" style={{ marginTop: 4 }}>

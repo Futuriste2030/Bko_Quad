@@ -75,7 +75,7 @@ export default function Slots() {
     setBusy(true);
     try {
       const generic = activities.find((a) => String(a.site) === slotSite && norm(a.name).startsWith('creneau'));
-      if (!generic) throw new Error('Aucune activité Â« Créneau libre Â» sur ce site (catalogue).');
+      if (!generic) throw new Error('Aucune activité « Créneau libre » sur ce site (catalogue).');
       await createSlot({
         activity: generic.id,
         start: new Date(`${date}T${start}`).toISOString(),
@@ -198,7 +198,7 @@ export default function Slots() {
               {assignChoices.map((v) => (
                 <label key={v.id} className="slot" aria-checked={picked.includes(v.id)}>
                   <input type="checkbox" checked={picked.includes(v.id)} onChange={() => togglePick(v.id)} />
-                  <span><strong className="num">{v.plate}</strong><br /><small>{v.model}{v.color ? ` Â· ${v.color}` : ''}</small></span>
+                  <span><strong className="num">{v.plate}</strong><br /><small>{v.model}{v.color ? ` · ${v.color}` : ''}</small></span>
                 </label>
               ))}
               {assignChoices.length === 0 && <p>Aucun engin en service sur ce site. Voyez la Flotte.</p>}

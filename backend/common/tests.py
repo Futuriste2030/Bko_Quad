@@ -148,11 +148,7 @@ class DocumentPdfTest(TestCase):
         self.assertEqual(r.status_code, 200)
         self.assertEqual(r["Content-Type"], "application/pdf")
         self.assertTrue(b"".join(r.streaming_content).startswith(b"%PDF"))
-        # Facture : émission d'abord, sinon 400.
-        self.assertEqual(
-            client.get(f"/api/v1/documents/{b['id']}/facture/pdf/").status_code, 400)
-        inv = client.post("/api/v1/payments/invoice/", {"booking": b["id"]})
-        self.assertIn(inv.status_code, (200, 201))
+        # Facture : émise automatiquement à la création de la réservation.
         f = client.get(f"/api/v1/documents/{b['id']}/facture/pdf/")
         self.assertEqual(f.status_code, 200)
         self.assertTrue(b"".join(f.streaming_content).startswith(b"%PDF"))

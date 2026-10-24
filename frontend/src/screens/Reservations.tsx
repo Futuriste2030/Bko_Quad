@@ -33,7 +33,7 @@ const ACT_TEXT: Record<Act['kind'], { title: (c: string) => string; text: string
 };
 
 /* Changement de statut : seules les transitions tracées du serveur.
-   Â« Confirmée Â» vient d’un encaissement (espèces : écran Factures ;
+   « Confirmée » vient d’un encaissement (espèces : écran Factures ;
    en ligne : webhook de l’agrégateur), jamais d’un bouton. */
 export default function Reservations() {
   const link = useSiteLink();
@@ -140,7 +140,7 @@ export default function Reservations() {
     <AppShell>
       <PageHeader
         title="Réservations"
-        sub="Â« Confirmée Â» = paiement encaissé — jamais un bouton. Le guide scanne à l’arrivée (minuteur lancé), puis au retour pour terminer."
+        sub="« Confirmée » = paiement encaissé — jamais un bouton. Le guide scanne à l’arrivée (minuteur lancé), puis au retour pour terminer."
         actions={<Link to={link("/reservations/nouvelle")} className="btn btn-accent"><Icon name="plus" size={18} />Nouvelle réservation</Link>}
       />
       <div className="card">
@@ -161,7 +161,7 @@ export default function Reservations() {
       {loading && <SkeletonList n={4} />}
       {error && <div className="alert-error" role="alert">{error}</div>}
       {!loading && !error && rows.length === 0 && (
-        <EmptyState icon="ticket" title="Aucune réservation" text="Touchez Â« Nouvelle réservation Â» pour commencer."
+        <EmptyState icon="ticket" title="Aucune réservation" text="Touchez « Nouvelle réservation » pour commencer."
           action={<Link to={link("/reservations/nouvelle")} className="btn btn-primary">Nouvelle réservation</Link>} />
       )}
 
@@ -210,7 +210,7 @@ export default function Reservations() {
                 </div>
                 <div className="row-meta">
                   <span className="num">{fmtSlot(b.expires_at)}</span>
-                  <span className="num">{b.persons} pers. Â· {b.quads} {resourceNoun(b)}</span>
+                  <span className="num">{b.persons} pers. · {b.quads} {resourceNoun(b)}</span>
                   {platesOf(b) && <span className="num">{b.resource_type === 'velo' ? 'Vélos' : 'Quads'} : {platesOf(b)}</span>}
                 </div>
                 <div className="row-top">
@@ -230,8 +230,8 @@ export default function Reservations() {
                     <div className="ride-timer" role="timer"
                       aria-label={left <= 0 ? `Sortie ${b.code} à clôturer` : `Temps restant ${fmtCountdown(left)}`}>
                       <div className="row-top">
-                        <span><Icon name="clock" size={16} /> <strong>Minuteur Â· {r.durationMin} min</strong></span>
-                        <strong className="num">{left <= 0 ? 'Ã€ clôturer' : fmtCountdown(left)}</strong>
+                        <span><Icon name="clock" size={16} /> <strong>Minuteur · {r.durationMin} min</strong></span>
+                        <strong className="num">{left <= 0 ? 'À clôturer' : fmtCountdown(left)}</strong>
                       </div>
                       <div className="meter" role="progressbar" aria-valuenow={Math.round(100 - pct)} aria-valuemin={0} aria-valuemax={100}>
                         <span style={{ width: `${100 - pct}%` }} />
@@ -282,7 +282,7 @@ export default function Reservations() {
                   <tr key={b.id}>
                     <td className="num"><strong>{b.code}</strong></td>
                     <td className="num">{fmtSlot(b.expires_at)}</td>
-                    <td className="num">{b.persons} Â· {b.quads} {resourceNoun(b)}</td>
+                    <td className="num">{b.persons} · {b.quads} {resourceNoun(b)}</td>
                     <td className="num">{fcfa(b.total)}</td>
                     <td className="num">{fcfa(Math.max(0, b.total - b.deposit_due))}</td>
                     <td>{b.site_name || '-'}</td>
@@ -304,7 +304,7 @@ export default function Reservations() {
                             const left = remainingMs(r, now);
                             return (
                               <span className="badge badge-confirmed num" role="timer" title={`Formule ${r.durationMin} min`}>
-                                <Icon name="clock" size={14} />{left <= 0 ? 'Ã€ clôturer' : fmtCountdown(left)}
+                                <Icon name="clock" size={14} />{left <= 0 ? 'À clôturer' : fmtCountdown(left)}
                               </span>
                             );
                           })()}

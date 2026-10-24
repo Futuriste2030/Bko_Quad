@@ -11,7 +11,7 @@ import { activeSiteId, createExpense, listBookings, listEntries, listSites, type
 import { fcfa } from '../lib/format';
 
 /* Caisse : le livre unique — recettes auto + recettes manuelles (ancien),
-   dépenses saisies. Ã‰criture validée jamais supprimée, mois clos verrouillé. */
+   dépenses saisies. Écriture validée jamais supprimée, mois clos verrouillé. */
 const DIRS = [
   { v: 'all', label: 'Tous' },
   { v: 'in', label: 'Recettes' },

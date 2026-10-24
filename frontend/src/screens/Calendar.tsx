@@ -55,7 +55,7 @@ export default function Calendar() {
                 <div key={s.id} className="row-top">
                   <div>
                     <div className="row-title num">{t} — {s.capacity} places</div>
-                    <div className="row-meta"><span className="num">{used} inscrits Â· {left} restantes</span></div>
+                    <div className="row-meta"><span className="num">{used} inscrits · {left} restantes</span></div>
                     <div style={{ height: 6, borderRadius: 4, background: 'var(--surface-2)', marginTop: 6, minWidth: 160 }}>
                       <div style={{ width: `${pct}%`, height: '100%', borderRadius: 4, background: left <= 0 ? 'var(--danger)' : 'var(--ink)' }} />
                     </div>
