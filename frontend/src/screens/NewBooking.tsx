@@ -496,7 +496,7 @@ export default function NewBooking() {
           )}
           <div className="btn-row" style={{ marginTop: 12 }}>
             <button type="button" className="btn btn-ghost" onClick={() => setStep(1)}>Retour</button>
-            <button type="button" className="btn btn-primary" onClick={continueWithSlot} disabled={busy || (!showCustom && (!slotId || !formule)) || (showCustom && !formule)}>
+            <button type="button" className="btn btn-primary" onClick={continueWithSlot} disabled={busy || (!showCustom && (!slotId || !formule)) || (showCustom && !formule) || (!showCustom && !!fleet && fleet.free === 0)}>
               {busy && <span className="caret" aria-hidden="true" />}{showCustom ? 'Enregistrer cette heure et continuer' : 'Continuer'}
             </button>
           </div>
@@ -565,7 +565,7 @@ export default function NewBooking() {
           </Field>
           <div className="btn-row">
             <button type="button" className="btn btn-ghost" onClick={() => setStep(2)}>Retour</button>
-            <button type="button" className="btn btn-primary" onClick={submit} disabled={busy}>
+            <button type="button" className="btn btn-primary" onClick={submit} disabled={busy || (!!fleet && totQ > fleet.free)}>
               {busy && <span className="caret" aria-hidden="true" />}Enregistrer la réservation
             </button>
           </div>
