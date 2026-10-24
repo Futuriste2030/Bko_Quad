@@ -148,10 +148,13 @@ def _logo_image(height, max_side=200):
     src = Path(settings.BASE_DIR).parent / "logo_bko_quad.jpeg"
     if src.exists():
         try:
-            im = PILImage.open(src).convert("RGB")
-            bbox = im.point(lambda x: 0 if x > 200 else 255, mode="1").getbbox()
+            rgb = PILImage.open(src).convert("RGB")
+            grey = rgb.convert("L")
+            bbox = grey.point(lambda x: 0 if x > 200 else 255).getbbox()
             if bbox:
-                im = im.crop(bbox)
+                im = rgb.crop(bbox)
+            else:
+                im = rgb
             buf = io.BytesIO()
             im.save(buf, format="PNG")
             buf.seek(0)
