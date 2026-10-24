@@ -38,6 +38,8 @@ import SyncScreen from './screens/Sync';
 import { SyncWatcher } from './lib/sync';
 import Menu from './screens/Menu';
 import Onboarding from './screens/Onboarding';
+import Tutorial from './components/Tutorial';
+import { loadTutorialSeen } from './components/Tutorial';
 import './styles/tokens.css';
 import './styles/app.css';
 import { useState, type JSX } from 'react';
@@ -57,6 +59,20 @@ function OnboardingGate({ children }: { children: JSX.Element }) {
       onDone={() => {
         try { localStorage.setItem(ONBOARDED_KEY, '1'); } catch { /* stockage indisponible */ }
         setDone(true);
+      }}
+    />
+  );
+}
+
+function TutorialHost() {
+  const { role, ready } = useAuth();
+  const [seen, setSeen] = useState(loadTutorialSeen);
+  if (!ready || !role || seen) return null;
+  return (
+    <Tutorial
+      onDone={() => {
+        try { localStorage.setItem('bko.tutorial.seen', '1'); } catch { /* ignore */ }
+        setSeen(true);
       }}
     />
   );
@@ -158,6 +174,7 @@ export default function App() {
           <NotifyProvider>
           <BrowserRouter future={{ v7_startTransition: true, v7_relativeSplatPath: true }}>
             <SyncWatcher />
+            <TutorialHost />
             <OnboardingGate>
             <Routes>
               <Route path="/connexion" element={<Public><Login /></Public>} />
