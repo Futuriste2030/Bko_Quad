@@ -316,6 +316,29 @@ class SiteViewSet(SiteScopeMixin, CatalogueViewSetMixin, viewsets.ModelViewSet):
     serializer_class = SiteSerializer
     site_lookup = "pk"
 
+    def destroy(self, request, *args, **kwargs):
+        from django.db.models import ProtectedError
+
+        site = self.get_object()
+        # Suppression en cascade : formules (et leurs créneaux), engins,
+        # pièces, maintenance du site. Les écritures comptables/bancaires sont
+        # détachées (SET_NULL) par le modèle.
+        try:
+            from bookings.models import Booking
+            if Booking.objects.filter(slot__activity__site=site).exists():
+                return Response(
+                    {"detail": "Site avec des réservations : annulez-les d'abord."},
+                    status=400)
+            from catalogue.models import Activity, Maintenance, Slot, SparePart, Vehicle
+            Slot.objects.filter(activity__site=site).delete()
+            Activity.objects.filter(site=site).delete()
+            Maintenance.objects.filter(vehicle__site=site).delete()
+            SparePart.objects.filter(site=site).delete()
+            Vehicle.objects.filter(site=site).delete()
+        except ProtectedError as e:
+            return Response({"detail": str(e)}, status=400)
+        return super().destroy(request, *args, **kwargs)
+
 
 class ActivityViewSet(SiteScopeMixin, CatalogueViewSetMixin, viewsets.ModelViewSet):
     queryset = Activity.objects.all()

@@ -520,6 +520,14 @@ async function postOne<T>(path: string, body: unknown): Promise<T> {
 export async function createSite(input: { name: string; city?: string }): Promise<Site> {
   return postOne<Site>('/sites/', input);
 }
+export async function deleteSite(id: number): Promise<void> {
+  const r = await req(`/sites/${id}/`, { method: 'DELETE' });
+  if (r.status === 401) { logout(); throw new Error('Session expirée, reconnectez-vous.'); }
+  if (!r.ok) {
+    const err = await r.json().catch(() => ({}));
+    throw new Error(err.detail ?? 'Suppression impossible (site utilisé).');
+  }
+}
 
 export async function createSlot(input: { activity: number; start: string; end: string; capacity: number }): Promise<Slot> {
   return postOne<Slot>('/slots/', input);

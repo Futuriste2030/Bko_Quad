@@ -8,7 +8,7 @@ import { useCompany } from '../lib/company';
 import { useTheme } from '../lib/theme';
 import { useToast } from '../lib/toast';
 import {
-  changePassword, createSite, createUser, getCompany, getVersion, listLines, listSites, listUsers, mediaUrl, resetUserPassword, saveCompany,
+  changePassword, createSite, createUser, deleteSite, getCompany, getVersion, listLines, listSites, listUsers, mediaUrl, resetUserPassword, saveCompany,
   toggleCollect, toggleUserActive, totpEnroll, totpVerify, type AdminUser, type Site, type TrackedLine,
 } from '../lib/api';
 import { currentPerm, setNotifyEnabled, useNotifyEnabled, type NotifPerm } from '../lib/notifpref';
@@ -164,6 +164,15 @@ export default function Settings() {
       setSCity('Bamako');
       notify('success', 'Site créé', `${s.name} — ${s.city}.`);
     } catch (e) { notify('error', 'Création impossible', e instanceof Error ? e.message : ''); }
+    finally { setBusy(false); }
+  }
+  async function removeSite(s: Site) {
+    setBusy(true);
+    try {
+      await deleteSite(s.id);
+      setSites((list) => list.filter((x) => x.id !== s.id));
+      notify('success', 'Site supprimé', `${s.name} et ses formules ont été supprimés.`);
+    } catch (e) { notify('error', 'Suppression impossible', e instanceof Error ? e.message : ''); }
     finally { setBusy(false); }
   }
 
@@ -356,6 +365,9 @@ export default function Settings() {
               <div className="row-top" key={s.id}>
                 <span><strong>{s.name}</strong><span className="small muted"> — {s.city}</span></span>
                 <span className="small muted">Site #{s.id}</span>
+                <button type="button" className="btn btn-sm btn-danger" onClick={() => removeSite(s)} disabled={busy} title="Supprimer le site et ses formules">
+                  <Icon name="x" size={14} />Supprimer
+                </button>
               </div>
             ))}
             {sites.length === 0 && (
