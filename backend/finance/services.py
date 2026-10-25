@@ -63,7 +63,11 @@ def add_entry(*, day, category, label, direction, amount, created_by=None,
         if MonthlyClosing.objects.filter(month=month_bounds(day)).exists():
             raise FinanceError("Mois clos : écriture impossible.")
         if direction == CashbookEntry.OUT and month_balance(day) - amount < 0:
-            raise FinanceError("Sortie refusée : solde deviendrait négatif, alerte direction.")
+            raise FinanceError(
+                f"Sortie refusée : solde de la caisse "
+                f"({month_balance(day)} FCFA) insuffisant pour "
+                f"{amount} FCFA. Enregistrez d'abord une recette "
+                f"(entrée) ou réduisez le montant.")
         entry = CashbookEntry.objects.create(
             date=day, site=site, category=category, label=label,
             voucher=next_voucher(day), direction=direction, amount=amount,

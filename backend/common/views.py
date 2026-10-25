@@ -991,10 +991,10 @@ class ExpenseView(APIView):
                 receipt=str(request.data.get("receipt", "")).strip(),
                 created_by=request.user,
             )
-        except (KeyError, ValueError, TypeError):
-            return Response({"detail": "Date, catégorie, libellé et montant requis."}, status=400)
         except FinanceError as e:
             return Response({"detail": str(e)}, status=400)
+        except (KeyError, ValueError, TypeError):
+            return Response({"detail": "Date, catégorie, libellé et montant requis."}, status=400)
         return Response(CashbookEntrySerializer(entry).data, status=201)
 
 
@@ -1108,10 +1108,10 @@ class BankWriteView(APIView):
                 site=site,
                 created_by=request.user,
             )
-        except (KeyError, ValueError, TypeError):
-            return Response({"detail": "Date, motif, nom et montant requis."}, status=400)
         except FinanceError as e:
             return Response({"detail": str(e)}, status=400)
+        except (KeyError, ValueError, TypeError):
+            return Response({"detail": "Date, motif, nom et montant requis."}, status=400)
         from audit.services import log_action
 
         log_action(actor=request.user, action="bank.create",
@@ -1659,10 +1659,10 @@ class PayrollSheetViewSet(mixins.ListModelMixin, mixins.RetrieveModelMixin, view
     def create_sheet(self, request):
         try:
             sheet = open_sheet(int(request.data["year"]), int(request.data["month"]))
-        except (KeyError, ValueError, TypeError):
-            return Response({"detail": "Année et mois requis."}, status=400)
         except PayrollError as e:
             return Response({"detail": str(e)}, status=400)
+        except (KeyError, ValueError, TypeError):
+            return Response({"detail": "Année et mois requis."}, status=400)
         return Response(PayrollSheetSerializer(sheet).data, status=201)
 
     def destroy(self, request, *args, **kwargs):
@@ -1746,10 +1746,10 @@ class PayslipViewSet(mixins.ListModelMixin, mixins.RetrieveModelMixin, viewsets.
                 bonuses=[(b["label"], int(b["amount"])) for b in request.data.get("bonuses", [])],
                 legal_deductions=[(b["label"], int(b["amount"])) for b in request.data.get("legal_deductions", [])],
             )
-        except (KeyError, ValueError, TypeError):
-            return Response({"detail": "Fiche et compte requis."}, status=400)
         except PayrollError as e:
             return Response({"detail": str(e)}, status=400)
+        except (KeyError, ValueError, TypeError):
+            return Response({"detail": "Fiche et compte requis."}, status=400)
         return Response(PayslipSerializer(slip).data, status=201)
 
     @action(detail=True, methods=["post"], permission_classes=[AdminRoles])
