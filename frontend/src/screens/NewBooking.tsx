@@ -324,7 +324,7 @@ export default function NewBooking() {
       const b = await createBooking({
         customer: customer.id, slot: slotId, activity: formule.id,
         persons: totP, quads: totQ, lines: payload, source, previewTotal,
-        customerLabel: customer.name,
+        customerLabel: customer.name, call: callMatch?.id ?? null,
       });
       setDone(b);
       clearDraft();
@@ -384,7 +384,7 @@ export default function NewBooking() {
             <div className="banner banner-success" role="status">
               <Icon name="phone" size={20} />
               <div><strong>Appel détecté dans le journal.</strong>
-              <div className="small">Source « Téléphone » verrouillée à l’étape 3 (numéro retrouvé).</div></div>
+              <div className="small">Source « Téléphone » et motif de l’appel verrouillés (numéro retrouvé). La réservation sera rattachée à cet appel.</div></div>
             </div>
           )}
           <Field label="Téléphone" required htmlFor="nb-phone" hint="Format international, ex. +223 78 80 30 72">

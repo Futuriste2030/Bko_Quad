@@ -374,7 +374,7 @@ export async function getAvailability(slot: number, activity?: number): Promise<
   return r.json() as Promise<FleetAvailability>;
 }
 
-export async function createBooking(input: { customer: number; slot: number; persons: number; quads?: number; source?: string; activity?: number; lines?: { persons: number; quads: number }[]; previewTotal?: number; customerLabel?: string }): Promise<Booking> {
+export async function createBooking(input: { customer: number; slot: number; persons: number; quads?: number; source?: string; activity?: number; lines?: { persons: number; quads: number }[]; previewTotal?: number; customerLabel?: string; call?: number | null }): Promise<Booking> {
   /* J : code proposé par l'appareil (le Hub le garde s'il est libre) + heure
      de saisie tracée. Hors ligne, la réservation reste « à synchroniser ». */
   const localId = await allocLocalId();
@@ -382,6 +382,7 @@ export async function createBooking(input: { customer: number; slot: number; per
   const body = {
     customer: input.customer, slot: input.slot, persons: input.persons, quads: input.quads ?? 1,
     source: input.source ?? 'phone', activity: input.activity, lines: input.lines,
+    call: input.call ?? null,
   };
   const r = await postOrQueue<Booking>('/bookings/', body, {
     kind: 'booking',

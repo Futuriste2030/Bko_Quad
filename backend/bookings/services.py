@@ -402,6 +402,27 @@ def create_booking(*, customer, slot_id, persons, quads=1, source="phone", creat
                         issue_invoice(booking_id=b.id)
                     except Exception:
                         pass
+                    # Lien avec l'appel détecté : gèle le motif (anomalie résolue).
+                    if call is not None:
+                        try:
+                            from telephony.models import CallAnomaly, CallLog
+                            call_obj = CallLog.objects.filter(pk=call).first()
+                            if call_obj is not None:
+                                if call_obj.site_id is None:
+                                    call_obj.site_id = slot.activity.site_id
+                                    call_obj.save(update_fields=["site"])
+                                if call_obj.site_id is None:
+                                    call_obj.site = slot.activity.site
+                                    call_obj.save(update_fields=["site"])
+                                for anom in CallAnomaly.objects.filter(call=call_obj, status="open"):
+                                    anom.status = "resolved"
+                                    anom.reason = "renseignement"
+                                    anom.comment = f"Réservation {booking_code} créée depuis l'appel."
+                                    anom.resolved_by = created_by
+                                    anom.resolved_at = timezone.now()
+                                    anom.save()
+                        except Exception:
+                            pass
                     return b
             except IntegrityError:
                 # Code déjà pris (proposition de l'appareil) : on regénère.
