@@ -1,0 +1,238 @@
+================================================================================
+BKO QUAD HUB - PRESENTATION PROFESSIONNELLE
+================================================================================
+Date de preparation : 26 octobre 2026
+Version : 1.0 (PWA + API v1 + APK Android)
+Client / exploitation : BKO Quad (Mali, Cote d'Ivoire - multi-sites)
+
+--------------------------------------------------------------------------------
+1. RESUME EXECUTIF
+--------------------------------------------------------------------------------
+BKO Quad Hub est un systeme d'information complet pour la gestion d'une
+activite de location de quads et velos electriques : reservations, encaissements,
+caisse, banque, flotte, maintenance, appels, communication, paie et RH.
+
+Il se compose de :
+  - une application web progressive (PWA) accessible sur telephone, tablette et
+    ordinateur, installable comme une application ;
+  - une API securisee (JWT, roles) hebergee en production sur https://app.bkoquad.ml ;
+  - deux applications Android natives (APK) : "standard" (WebView de la PWA)
+    et "collecteur" (WebView + recuperation automatique du journal d'appels).
+
+Objectif : remplacer les carnets, tableurs et echanges WhatsApp par un outil
+unique, fiable, tracable et multi-sites, sans double comptabilite.
+
+--------------------------------------------------------------------------------
+2. VALEUR AJOUTEE / AVANTAGES
+--------------------------------------------------------------------------------
+  - Centralisation : reservations, paiements, caisse, banque, flotte, RH dans un
+    seul outil, accessible en ligne.
+  - Tracabilite totale : chaque ecriture est horodatee, rattachee a un site et
+    a un utilisateur ; rien n'est jamais supprime (ecritures inverses uniquement).
+  - Multi-sites : Bamako, Abidjan et autres sites ; filtrage par site pour la
+    direction et la comptabilite, site impose pour les equipes de terrain.
+  - Hors ligne tolerant : la PWA et l'APK supportent les coupures reseau
+    (ecritures mises en file et rejouees au retour).
+  - Temps reel : notifications, cloche de nouveautes, synchronisation des appels
+    toutes les 15 minutes (APK collecteur).
+  - PDF professionnels : recus, factures, fiches de recette, rapprochements
+    bancaires generes cote serveur (pas de pages coupees).
+  - Securite : authentification JWT, roles, TOTP (2FA) pour les profils sensibles,
+    cookies securises en production.
+  - Couts maitrises : PWA installable sans store, APK sideloadables, aucune
+    dependance lourde (graphiques SVG, pas de librairie externe).
+
+--------------------------------------------------------------------------------
+3. MODULES FONCTIONNELS (PWA)
+--------------------------------------------------------------------------------
+3.1 Accueil et tableau de bord
+  - 4 KPI (reservations, encaissements, occupation, appels a traiter).
+  - Graphiques : barres 7 jours, donut des statuts, aire cumulee, planning du jour.
+  - Cloche de notifications temps reel (sondage 60 s).
+
+3.2 Reservations
+  - Wizard en 4 etapes (client, creneau, formule, validation).
+  - Calendrier sur 14 jours, recherche et filtres.
+  - 7 statuts de reservation (en attente d'acompte, confirmee, annulee, no-show,
+    terminee, etc.) avec transitions controlees.
+  - Detection d'appel a la saisie (8 derniers chiffres -> source Telephone).
+  - Annulation motivee, tracabilite des evenements.
+
+3.3 Paiements et facturation
+  - Encaissement especes / mobile money, idempotence (pas de double paiement).
+  - Acompte configurable par formule ; paiement complet confirme automatiquement.
+  - Reçu et facture en PDF avec QR code, en-tete entreprise, cachet et signature.
+  - Numerotation unique BKO-{SITE}-{CLIENT}-{JJMMAAAA}-{NNNN}.
+  - Facture unique par reservation (pas de doublon).
+
+3.4 Caisse (livre unique)
+  - Recettes automatiques (reservations) + recettes manuelles (ancien).
+  - Depenses saisies avec categorie (carburant, reparation, salaire, avance,
+    loyer, autre).
+  - Bordereau mensuel automatique, solde jamais negatif.
+  - Filtres par sens, recherche par libelle ou bordereau.
+  - Affichage Recettes / Depenses / Solde (filtre).
+
+3.5 Cloture du jour / du mois
+  - Cloture verrouille les ecritures du mois (plus de modification).
+  - Report automatique du solde d'ouverture au mois suivant.
+  - Fiche de recette mensuelle imprimable et telechargeable en PDF.
+
+3.6 Banque (compte distinct de la caisse)
+  - Versements (bordereau), retraits (cheque/reference), virements recus.
+  - Rapprochement bancaire avec solde progressif, frais et agios, ecart.
+  - Rapport PDF filtrable par banque et par site.
+
+3.7 Flotte et maintenance
+  - Registre des quads et velos (type, couleur, date d'ajout).
+  - Affectation des engins aux creneaux (meme site, verrouille serveur).
+  - Maintenance avec cout -> depense automatique en caisse.
+  - Engin hors service exclu des creneaux.
+  - Rapport mensuel dynamique (ajouts + dernieres maintenances).
+
+3.8 Appels (rapprochement telephonique)
+  - Import du journal d'appels par lots (<= 500), normalisation +223 / +225.
+  - Detection des appels sans reservation (anomalies).
+  - Temoins de synchronisation (derniere synchro, nombre envoye).
+
+3.9 Factures et exports
+  - Liste des factures, telechargement stylise.
+  - Exports Excel/CSV (periode, site, activite, agent).
+
+3.10 Communication
+  - Editeur de texte enrichi, communications publiees.
+  - Lettres et documents RH a en-tete entreprise.
+
+3.11 Paie et RH
+  - Employes et contrats, fiches de paie mensuelles.
+  - Lignes d'entree, cloture verrouillee, versements en caisse.
+  - Documents RH (contrat, promotion, augmentation, prime, attestation) en PDF
+    avec signatures entreprise et salarie.
+  - "Mes documents" pour chaque utilisateur.
+
+3.12 Parametres et administration
+  - Utilisateurs (creation, roles, reset mot de passe, TOTP).
+  - Fiche entreprise (logo, NIF, RCCM, cachet, signature, message de remerciement).
+  - Themes clair/sombre, onboarding premiere utilisation.
+  - Telechargement des APK (ecran Applications).
+
+--------------------------------------------------------------------------------
+4. ROLES ET DROITS
+--------------------------------------------------------------------------------
+  - Guide : accueil, calendrier, scanner, mes documents.
+  - Agent : + reservations, appels, factures, exports.
+  - Responsable : + caisse, banque, depenses, flotte, maintenance, recette,
+    cloture, communication, RH.
+  - Admin : tout + parametres, utilisateurs, entreprise.
+  - Comptable : lecture finance (caisse, banque, factures, recette, paie).
+  - Superadmin : administration complete.
+
+Les roles de terrain (agent, guide, responsable) sont verrouilles sur leur site.
+La direction et la comptabilite peuvent filtrer par site ou voir tout le reseau.
+
+--------------------------------------------------------------------------------
+5. REGLES METIER ESSENTIELLES
+--------------------------------------------------------------------------------
+  - Aucune ecriture de caisse n'est jamais supprimee : on passe une ecriture
+    inverse approuvee.
+  - Le solde de la caisse ne peut jamais devenir negatif (sortie refusee).
+  - Un mois clos est verrouille : plus aucune ecriture possible sur ce mois.
+  - Le report d'ouverture est calcule automatiquement a la cloture.
+  - Les recettes de reservation sont creees automatiquement a l'encaissement,
+    jamais saisies a la main (sauf anciennes recettes hors Hub).
+  - Le cout d'une maintenance genere automatiquement une depense en caisse.
+  - Un engin hors service est exclu des creneaux.
+  - Les reservations sont rattachees a un site ; les prix sont ceux de la
+    formule choisie (serveur fait foi).
+  - Les appels sont normalises (+223 Mali, +225 Cote d'Ivoire) et dedoublonnes
+    par external_id.
+  - Les numeros de documents sont uniques et sans trou cote compteur interne.
+
+--------------------------------------------------------------------------------
+6. UTILISATION DE L'APK STANDARD (tous les agents)
+--------------------------------------------------------------------------------
+Public : tous les agents, guides, responsables (acces a la PWA).
+Fonction : WebView plein ecran vers la PWA, sans permission sensible.
+
+Installation :
+  1. Telecharger "bko-hub-standard-v1.0.apk" depuis l'ecran Applications ou
+     depuis https://app.bkoquad.ml/apks/.
+  2. Autoriser l'installation de sources inconnues si demande.
+  3. Installer et ouvrir : l'application s'ouvre directement sur le Hub.
+  4. Se connecter avec son compte (agent, guide, responsable...).
+
+Usage quotidien :
+  - L'APK se comporte comme la PWA : navigation, reservations, scan QR,
+    cloture, etc.
+  - Fonctionne en ligne ; tolere les coupures reseau (mise en file).
+  - Pas de configuration a remplir : l'URL du serveur est integree.
+
+Avantage : installation simple, aucune permission sensible, mise a jour par
+reinstallation de l'APK.
+
+--------------------------------------------------------------------------------
+7. UTILISATION DE L'APK COLLECTEUR (1 telephone d'entreprise par pays)
+--------------------------------------------------------------------------------
+Public : 1 telephone d'entreprise par pays (Mali +223, Cote d'Ivoire +225),
+         role agent (compte collecteur dedie).
+Fonction : WebView PWA + recuperation automatique du journal d'appels et
+           synchronisation vers le Hub toutes les 15 minutes.
+
+Installation et configuration (une seule fois) :
+  1. Telecharger "bko-hub-collecteur-v1.0.apk" et installer (sideload).
+  2. Ouvrir l'application : l'ecran de configuration s'affiche.
+  3. L'adresse du Hub est pre-remplie automatiquement
+     (https://app.bkoquad.ml/) - ne pas modifier.
+  4. Remplir : nom d'utilisateur, mot de passe, site (Bamako / Abidjan),
+     line_id (voir API /lines/).
+  5. Cliquer "Enregistrer et demarrer".
+  6. Autoriser la lecture du journal d'appels et la desactivation de
+     l'optimisation batterie si demande.
+
+Usage :
+  - L'application fonctionne comme la PWA pour l'agent.
+  - En arriere-plan, les appels sont envoyes par lots au Hub.
+  - Dans l'ecran Appels du Hub : temoin de synchro (derniere synchro, nombre
+    envoye), detection des appels sans reservation.
+
+Reouverture de la configuration (support) :
+  - Triple appui sur la touche volume bas -> menu support ->
+    "Rouvrir la configuration".
+
+Important : sideload uniquement (Play Store refuse READ_CALL_LOG).
+
+--------------------------------------------------------------------------------
+8. DEMARRAGE RAPIDE (presentation)
+--------------------------------------------------------------------------------
+  1. Ouvrir https://app.bkoquad.ml/ (ou l'APK standard).
+  2. Se connecter avec un compte selon son role.
+  3. Onboarding premiere utilisation (3 ecrans + autorisations).
+  4. Tableau de bord : vue d'ensemble de l'activite.
+  5. Creer une reservation (wizard 4 etapes) -> encaisser -> recu PDF.
+  6. Cloturer la journee -> caisse mise a jour automatiquement.
+  7. Fin de mois : fiche de recette mensuelle + rapprochement bancaire en PDF.
+
+--------------------------------------------------------------------------------
+9. SECURITE ET CONFORMITE
+--------------------------------------------------------------------------------
+  - Authentification JWT avec refresh automatique.
+  - Roles et droits par ecran et par site.
+  - TOTP (2FA) pour les profils sensibles.
+  - Cookies securises en production (HTTPS).
+  - Aucune suppression d'ecriture : audit complet.
+  - Sauvegardes base de donnees et media (voir deploy/README.md).
+
+--------------------------------------------------------------------------------
+10. CONCLUSION
+--------------------------------------------------------------------------------
+BKO Quad Hub est un outil de gestion complet, fiable et multi-sites, concu
+pour l'exploitation reelle d'une activite de location de quads et velos.
+Il couvre toute la chaine : reservation -> encaissement -> caisse -> banque ->
+flotte -> communication -> paie, avec tracabilite et documents PDF professionnels.
+
+Les deux APK (standard et collecteur) permettent un deploiement simple sur
+telephone Android, sans store, avec synchronisation automatique des appels pour
+le suivi commercial.
+================================================================================
+FIN DU DOCUMENT
+================================================================================
