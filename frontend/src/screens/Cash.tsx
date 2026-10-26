@@ -116,6 +116,7 @@ export default function Cash() {
       <div className="kpi-grid">
         <div className="kpi featured"><span className="kpi-top">Recettes (filtre)</span><span className="kpi-value num">{fcfa(inn)}</span></div>
         <div className="kpi"><span className="kpi-top">Dépenses (filtre)</span><span className="kpi-value num">{fcfa(out)}</span></div>
+        <div className="kpi"><span className="kpi-top">Solde (filtre)</span><span className="kpi-value num">{fcfa(inn - out)}</span></div>
       </div>
       <div className="card">
         <div className="form-2">

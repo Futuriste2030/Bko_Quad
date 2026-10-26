@@ -4,8 +4,9 @@ import { CompanyFooter, CompanyHeader } from '../components/CompanyDoc';
 import SiteFilter from '../components/SiteFilter';
 import { EmptyState, Field, PageHeader, SkeletonList } from '../components/ui';
 import Icon from '../lib/icons';
-import { listBookings, listEntries, monthSummary, type Booking, type Entry, type MonthSummary } from '../lib/api';
+import { listBookings, listEntries, monthSummary, downloadPdf, type Booking, type Entry, type MonthSummary } from '../lib/api';
 import { fcfa } from '../lib/format';
+import { useToast } from '../lib/toast';
 
 /* Fiche de recette mensuelle : solde d'ouverture + entrées − sorties,
    recettes (mouvements) et dépenses, impayés attendus. Imprimable. */
@@ -15,12 +16,14 @@ function monthKey(d: Date): string {
 
 export default function Recette() {
   const now = new Date();
+  const { notify } = useToast();
   const [month, setMonth] = useState(monthKey(now));
   const [entries, setEntries] = useState<Entry[]>([]);
   const [bookings, setBookings] = useState<Booking[]>([]);
   const [summary, setSummary] = useState<MonthSummary | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
+  const [busy, setBusy] = useState(false);
 
   useEffect(() => {
     const [y, m] = month.split('-').map(Number);
@@ -47,12 +50,31 @@ export default function Recette() {
   const label = new Date(`${month}-02`).toLocaleDateString('fr-FR', { month: 'long', year: 'numeric' });
   const empty = inMonth.length === 0 && att === 0;
 
+  async function downloadRecettePdf() {
+    const [y, m] = month.split('-').map(Number);
+    setBusy(true);
+    try {
+      await downloadPdf(`/finance/recette/pdf/?year=${y}&month=${m}`,
+        `recette-mensuelle-${month}.pdf`);
+      notify('success', 'PDF téléchargé', 'Fiche de recette prête à envoyer.');
+    } catch (e) {
+      notify('error', 'Téléchargement impossible', e instanceof Error ? e.message : '');
+    } finally {
+      setBusy(false);
+    }
+  }
+
   return (
     <AppShell>
       <PageHeader
         title="Recette mensuelle"
         sub={`Fiche de recette de ${label}, à retirer en fin de mois.`}
-        actions={<button type="button" className="btn btn-ghost no-print" onClick={() => window.print()}><Icon name="file" size={18} />Imprimer</button>}
+        actions={(
+          <>
+            <button type="button" className="btn btn-ghost no-print" onClick={() => window.print()}><Icon name="file" size={18} />Imprimer</button>
+            <button type="button" className="btn btn-ghost no-print" onClick={downloadRecettePdf} disabled={busy}><Icon name="download" size={18} />Télécharger en PDF</button>
+          </>
+        )}
       />
       <div className="card form no-print">
         <div className="form-2">

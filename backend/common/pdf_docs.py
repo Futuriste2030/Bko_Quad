@@ -636,3 +636,86 @@ def pdf_bank_report(*, year, month, bank=None, site_name=None, rows, balance,
         (f"-{code_part(site_name, 12)}" if site_name else "") + \
         (f"-{code_part(bank, 12)}" if bank else "") + ".pdf", \
         _render(title, flow)
+
+
+_MOIS_FR = ["janvier", "février", "mars", "avril", "mai", "juin",
+            "juillet", "août", "septembre", "octobre", "novembre", "décembre"]
+
+
+def pdf_recette_mensuelle(*, year, month, site_name=None, entries=None,
+                          opening=0, inn=0, out=0, balance=0, locked=False,
+                          att=0):
+    """Fiche de recette mensuelle (caisse) en vrai PDF, même contenu que l'écran."""
+    from reportlab.platypus import Paragraph, Spacer, Table, TableStyle
+    from reportlab.lib import colors
+    from reportlab.lib.colors import HexColor
+
+    from common.models import CompanyProfile
+    from finance.models import CashbookEntry
+
+    company, _ = CompanyProfile.objects.get_or_create(pk=1)
+    st = _styles()
+    entries = list(entries or [])
+    inn_entries = [e for e in entries if e.direction == CashbookEntry.IN]
+    out_entries = [e for e in entries if e.direction == CashbookEntry.OUT]
+    label = f"{_MOIS_FR[month - 1]} {year}".capitalize()
+    scope = site_name or ""
+    title = "FICHE DE RECETTE" + (f" — {scope}" if scope else "")
+    flow = _header_flowables(
+        company, title,
+        f"Période : {label} · Édité le {bamako_date(datetime.now(BAMAKO))}"
+        + (f" · {scope}" if scope else " · Tout le réseau"))
+    # Synthèse
+    rows = [
+        ("Ouverture (report du mois précédent)", fcfa(opening)),
+        (f"Recettes (mouvements) — {len(inn_entries)} écriture(s)", fcfa(inn)),
+        (f"Dépenses — {len(out_entries)} écriture(s)", fcfa(out)),
+        ("Solde", fcfa(balance)),
+    ]
+    if locked:
+        rows.append(("Statut", "Mois clôturé (verrouillé)"))
+    else:
+        rows.append(("Impayés attendus (dépôts)", fcfa(att)))
+    flow.append(_section_table(st, "SYNTHÈSE", rows, total_last=True))
+    flow.append(Spacer(1, 10))
+
+    def _entries_table(entries_list, heading):
+        from reportlab.platypus import Paragraph
+        flow.append(Paragraph(heading, st["h1"]))
+        flow.append(Spacer(1, 4))
+        if not entries_list:
+            flow.append(Paragraph("Aucune écriture sur la période.", st["small"]))
+            flow.append(Spacer(1, 8))
+            return
+        data = [["Date", "N°", "Libellé", "Montant"]]
+        for e in entries_list:
+            data.append([
+                bamako_date(e.date), e.voucher or "—", e.label or "—",
+                fcfa(e.amount),
+            ])
+        t = Table(data, repeatRows=1, colWidths=[70, 95, 285, 80])
+        t.setStyle(TableStyle([
+            ("FONTNAME", (0, 0), (-1, 0), "Helvetica-Bold"),
+            ("FONTSIZE", (0, 0), (-1, -1), 8.5),
+            ("BACKGROUND", (0, 0), (-1, 0), HexColor(DARK)),
+            ("TEXTCOLOR", (0, 0), (-1, 0), colors.white),
+            ("ROWBACKGROUNDS", (0, 1), (-1, -1), [colors.white, HexColor(LIGHT)]),
+            ("LINEBELOW", (0, 0), (-1, 0), 1.5, HexColor(ACCENT)),
+            ("LINEBELOW", (0, 1), (-1, -1), 0.4, HexColor("#b5b0a6")),
+            ("ALIGN", (3, 0), (3, -1), "RIGHT"),
+            ("VALIGN", (0, 0), (-1, -1), "TOP"),
+            ("TOPPADDING", (0, 0), (-1, -1), 3),
+            ("BOTTOMPADDING", (0, 0), (-1, -1), 3),
+            ("LEFTPADDING", (0, 0), (-1, -1), 4),
+            ("RIGHTPADDING", (0, 0), (-1, -1), 4),
+            ("BOX", (0, 0), (-1, -1), 1.2, HexColor(DARK)),
+        ]))
+        flow.append(t)
+        flow.append(Spacer(1, 8))
+
+    _entries_table(inn_entries, "Recettes")
+    _entries_table(out_entries, "Dépenses")
+
+    filename = "recette-mensuelle-" + f"{year}-{month:02d}" + \
+        (f"-{code_part(site_name, 12)}" if site_name else "") + ".pdf"
+    return filename, _render(title, flow)

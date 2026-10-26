@@ -316,6 +316,13 @@ class SiteViewSet(SiteScopeMixin, CatalogueViewSetMixin, viewsets.ModelViewSet):
     serializer_class = SiteSerializer
     site_lookup = "pk"
 
+    def get_permissions(self):
+        # Lecture publique (site web client) : sites et formules visibles sans auth.
+        if self.action in ("list", "retrieve"):
+            from rest_framework.permissions import AllowAny
+            return [AllowAny()]
+        return super().get_permissions()
+
     def destroy(self, request, *args, **kwargs):
         from django.db.models import ProtectedError
 
@@ -343,6 +350,12 @@ class SiteViewSet(SiteScopeMixin, CatalogueViewSetMixin, viewsets.ModelViewSet):
 class ActivityViewSet(SiteScopeMixin, CatalogueViewSetMixin, viewsets.ModelViewSet):
     queryset = Activity.objects.all()
     serializer_class = ActivitySerializer
+
+    def get_permissions(self):
+        if self.action in ("list", "retrieve"):
+            from rest_framework.permissions import AllowAny
+            return [AllowAny()]
+        return super().get_permissions()
 
     def destroy(self, request, *args, **kwargs):
         from django.db.models import ProtectedError
@@ -1261,6 +1274,56 @@ class BankReportPdfView(APIView):
             deposits=sum(r["credit"] for r in rows),
             withdrawals=sum(r["debit"] for r in rows),
             fees=fees, statement=statement)
+        return FileResponse(io.BytesIO(content), as_attachment=True,
+                            filename=filename, content_type="application/pdf")
+
+
+class RecettePdfView(APIView):
+    """Fiche de recette mensuelle (caisse) en PDF, filtrable par site."""
+    permission_classes = [FinanceReadRoles]
+
+    def get(self, request):
+        import io
+
+        from django.http import FileResponse
+
+        from common import pdf_docs
+        from bookings.models import Booking
+        from finance.models import CashbookEntry, MonthlyClosing
+
+        today = timezone.localdate()
+        try:
+            year = int(request.query_params.get("year", today.year))
+            month = int(request.query_params.get("month", today.month))
+            first = date(year, month, 1)
+        except (ValueError, TypeError):
+            return Response({"detail": "Mois invalide."}, status=400)
+        site = requested_site(request)
+        site_name = Site.objects.filter(pk=site).values_list("name", flat=True).first() if site else None
+        base = CashbookEntry.objects.all()
+        if site is not None:
+            base = base.filter(site_id=site)
+        entries = base.filter(date__year=year, date__month=month).order_by("date", "id")
+        closing = None
+        opening = 0
+        locked = False
+        if site is None:
+            closing = MonthlyClosing.objects.filter(month=first).first()
+            opening = closing.opening if closing else 0
+            locked = closing is not None
+        inn = sum(e.amount for e in entries if e.direction == CashbookEntry.IN)
+        out = sum(e.amount for e in entries if e.direction == CashbookEntry.OUT)
+        balance = (opening + inn - out) if site is None else (inn - out)
+        att_qs = Booking.objects.filter(status="pending_deposit",
+                                       expires_at__year=year,
+                                       expires_at__month=month)
+        if site is not None:
+            att_qs = att_qs.filter(slot__activity__site_id=site)
+        att = sum(b.deposit_due for b in att_qs)
+        filename, content = pdf_docs.pdf_recette_mensuelle(
+            year=year, month=month, site_name=site_name, entries=entries,
+            opening=opening, inn=inn, out=out, balance=balance,
+            locked=locked, att=att)
         return FileResponse(io.BytesIO(content), as_attachment=True,
                             filename=filename, content_type="application/pdf")
 
