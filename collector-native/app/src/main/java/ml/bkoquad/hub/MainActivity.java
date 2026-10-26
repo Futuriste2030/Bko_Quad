@@ -57,8 +57,14 @@ public class MainActivity extends Activity {
         // Plus aucune fermeture silencieuse : toute erreur de démarrage
         // s'affiche en plein écran (à photographier / recopier).
         try {
-            if (Prefs.isConfigured(this)) showWeb();
-            else showConfig();
+            // L'APK standard est une simple WebView de la PWA : pas de
+            // configuration à bloquer, on ouvre directement le Hub.
+            if (BuildConfig.IS_COLLECTOR) {
+                if (Prefs.isConfigured(this)) showWeb();
+                else showConfig();
+            } else {
+                showWeb();
+            }
         } catch (Throwable t) {
             showFatal(t);
         }
@@ -117,32 +123,80 @@ public class MainActivity extends Activity {
         setContentView(scroll);
     }
 
-    // ---------- Écran de configuration (1 fois, téléphone d'entreprise) ----------
+    // ---------- Écran de configuration (collecteur uniquement) ----------
     private void showConfig() {
         ScrollView scroll = new ScrollView(this);
+        scroll.setFillViewport(true);
         LinearLayout root = vertical();
-        root.addView(title("BKO Hub — configuration"));
-        root.addView(hint(BuildConfig.IS_COLLECTOR
-                ? "Téléphone d'entreprise : compte collecteur (rôle agent)."
-                : "Agence : compte personnel (agent, guide, responsable…)."));
-        root.addView(hint("Configuration unique, verrouillée après enregistrement."));
+        root.setBackgroundColor(android.graphics.Color.parseColor("#0f172a"));
+        root.setPadding(48, 64, 48, 48);
 
-        EditText hub = field(root, "Adresse du Hub", "https://hub.bko-quad.ml/");
+        TextView brand = new TextView(this);
+        brand.setText("BKO Hub");
+        brand.setTextSize(30);
+        brand.setTypeface(null, android.graphics.Typeface.BOLD);
+        brand.setTextColor(android.graphics.Color.parseColor("#ffffff"));
+        brand.setPadding(0, 0, 0, 8);
+        root.addView(brand);
+
+        TextView sub = new TextView(this);
+        sub.setText("Configuration du téléphone collecteur");
+        sub.setTextSize(15);
+        sub.setTextColor(android.graphics.Color.parseColor("#94a3b8"));
+        sub.setPadding(0, 0, 0, 24);
+        root.addView(sub);
+
+        // Carte blanche contenant les champs.
+        LinearLayout card = new LinearLayout(this);
+        card.setOrientation(LinearLayout.VERTICAL);
+        card.setBackgroundColor(android.graphics.Color.parseColor("#ffffff"));
+        card.setPadding(32, 32, 32, 32);
+        android.graphics.drawable.GradientDrawable gd = new android.graphics.drawable.GradientDrawable();
+        gd.setColor(android.graphics.Color.parseColor("#ffffff"));
+        gd.setCornerRadius(24f);
+        card.setBackground(gd);
+
+        TextView cardTitle = new TextView(this);
+        cardTitle.setText("Compte collecteur");
+        cardTitle.setTextSize(18);
+        cardTitle.setTypeface(null, android.graphics.Typeface.BOLD);
+        cardTitle.setTextColor(android.graphics.Color.parseColor("#0f172a"));
+        cardTitle.setPadding(0, 0, 0, 4);
+        card.addView(cardTitle);
+        TextView cardHint = new TextView(this);
+        cardHint.setText("Téléphone d'entreprise — rôle agent. Configuration unique, verrouillée ensuite.");
+        cardHint.setTextSize(12);
+        cardHint.setTextColor(android.graphics.Color.parseColor("#64748b"));
+        cardHint.setPadding(0, 0, 0, 16);
+        card.addView(cardHint);
+
+        // URL du serveur : écrite automatiquement, l'utilisateur n'y touche pas.
+        EditText hub = fieldStyled(card, "Adresse du Hub (automatique)", "https://hub.bko-quad.ml/");
         hub.setText("https://hub.bko-quad.ml/");
-        EditText user = field(root, "Nom d'utilisateur", "Ex. collecteur-bamako");
-        EditText pass = field(root, "Mot de passe", "••••••••");
+        hub.setEnabled(false);
+        hub.setTextColor(android.graphics.Color.parseColor("#475569"));
+
+        EditText user = fieldStyled(card, "Nom d'utilisateur", "Ex. collecteur-bamako");
+        EditText pass = fieldStyled(card, "Mot de passe", "••••••••");
         pass.setInputType(android.text.InputType.TYPE_CLASS_TEXT
                 | android.text.InputType.TYPE_TEXT_VARIATION_PASSWORD);
-        EditText site = field(root, "Site (Bamako / Abidjan)", "Bamako");
+        EditText site = fieldStyled(card, "Site (Bamako / Abidjan)", "Bamako");
         site.setText("Bamako");
-        EditText line = field(root, "line_id (voir API /lines/)", "Ex. 1");
+        EditText line = fieldStyled(card, "line_id (voir API /lines/)", "Ex. 1");
         line.setInputType(android.text.InputType.TYPE_CLASS_NUMBER);
 
         TextView err = new TextView(this);
+        err.setTextColor(android.graphics.Color.parseColor("#ef4444"));
+        err.setPadding(0, 16, 0, 0);
+
         Button save = new Button(this);
-        save.setText("Enregistrer");
+        save.setText("Enregistrer et démarrer");
+        save.setTextColor(android.graphics.Color.parseColor("#ffffff"));
+        save.setBackgroundColor(android.graphics.Color.parseColor("#E8590C"));
+        save.setPadding(24, 24, 24, 24);
         save.setOnClickListener(v -> {
             err.setText("Connexion…");
+            err.setTextColor(android.graphics.Color.parseColor("#94a3b8"));
             String hubUrl = hub.getText().toString().trim();
             new Thread(() -> {
                 try {
@@ -152,20 +206,47 @@ public class MainActivity extends Activity {
                     Prefs.save(MainActivity.this, hubUrl,
                             site.getText().toString().trim(), lineId,
                             auth.access, auth.refresh);
-                    // Détection à partir de zéro : seul l'avenir est remonté,
-                    // jamais l'historique (quota préservé, pas de bruit).
                     Prefs.setLastTs(MainActivity.this, System.currentTimeMillis());
                     Sync.schedule(MainActivity.this);
                     runOnUiThread(this::showWeb);
                 } catch (Exception e) {
-                    runOnUiThread(() -> err.setText("Échec : " + e.getMessage()));
+                    runOnUiThread(() -> {
+                        err.setTextColor(android.graphics.Color.parseColor("#ef4444"));
+                        err.setText("Échec : " + e.getMessage());
+                    });
                 }
             }).start();
         });
-        root.addView(save);
-        root.addView(err);
+
+        card.addView(save);
+        card.addView(err);
+        root.addView(card);
+
+        TextView footer = new TextView(this);
+        footer.setText("Support : triple appui volume-bas pour rouvrir la configuration.");
+        footer.setTextSize(11);
+        footer.setTextColor(android.graphics.Color.parseColor("#64748b"));
+        footer.setPadding(0, 24, 0, 0);
+        root.addView(footer);
+
         scroll.addView(root);
         setContentView(scroll);
+    }
+
+    private EditText fieldStyled(LinearLayout root, String label, String placeholder) {
+        TextView l = new TextView(this);
+        l.setText(label);
+        l.setTextSize(13);
+        l.setTypeface(null, android.graphics.Typeface.BOLD);
+        l.setTextColor(android.graphics.Color.parseColor("#0f172a"));
+        l.setPadding(0, 12, 0, 4);
+        root.addView(l);
+        EditText e = new EditText(this);
+        e.setHint(placeholder);
+        e.setPadding(16, 16, 16, 16);
+        e.setBackgroundColor(android.graphics.Color.parseColor("#f1f5f9"));
+        root.addView(e);
+        return e;
     }
 
     // ---------- Écran principal : la PWA en plein écran, rien d'autre ----------
