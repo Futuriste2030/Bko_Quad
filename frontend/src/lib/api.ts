@@ -771,6 +771,16 @@ export async function monthSummary(year: number, month: number): Promise<MonthSu
   return r.json();
 }
 
+export async function closeMonth(year: number, month: number): Promise<{ month: string; opening: number; closing: number; locked: boolean }> {
+  const r = await req(`/finance/month/close/`, { method: 'POST', body: JSON.stringify({ year, month }) });
+  if (r.status === 401) { logout(); throw new Error('Session expirée, reconnectez-vous.'); }
+  if (!r.ok) {
+    const err = await r.json().catch(() => ({}));
+    throw new Error(err.detail ?? 'Clôture impossible.');
+  }
+  return r.json();
+}
+
 /* Banque (compte distinct de la caisse) : versements, retraits, virements, rapprochement. */
 export type BankType = 'deposit' | 'withdrawal' | 'transfer';
 export interface BankTx {

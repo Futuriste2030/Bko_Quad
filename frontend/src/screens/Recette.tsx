@@ -4,9 +4,10 @@ import { CompanyFooter, CompanyHeader } from '../components/CompanyDoc';
 import SiteFilter from '../components/SiteFilter';
 import { EmptyState, Field, PageHeader, SkeletonList } from '../components/ui';
 import Icon from '../lib/icons';
-import { listBookings, listEntries, monthSummary, downloadPdf, type Booking, type Entry, type MonthSummary } from '../lib/api';
+import { listBookings, listEntries, monthSummary, downloadPdf, closeMonth, type Booking, type Entry, type MonthSummary } from '../lib/api';
 import { fcfa } from '../lib/format';
 import { useToast } from '../lib/toast';
+import { useAuth } from '../lib/auth';
 
 /* Fiche de recette mensuelle : solde d'ouverture + entrées − sorties,
    recettes (mouvements) et dépenses, impayés attendus. Imprimable. */
@@ -17,6 +18,8 @@ function monthKey(d: Date): string {
 export default function Recette() {
   const now = new Date();
   const { notify } = useToast();
+  const { role } = useAuth();
+  const mayClose = role === 'responsable' || role === 'admin' || role === 'comptable' || role === 'superadmin';
   const [month, setMonth] = useState(monthKey(now));
   const [entries, setEntries] = useState<Entry[]>([]);
   const [bookings, setBookings] = useState<Booking[]>([]);
@@ -24,6 +27,7 @@ export default function Recette() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
+  const [busyClose, setBusyClose] = useState(false);
 
   useEffect(() => {
     const [y, m] = month.split('-').map(Number);
@@ -64,6 +68,22 @@ export default function Recette() {
     }
   }
 
+  async function handleCloseMonth() {
+    const [y, m] = month.split('-').map(Number);
+    if (!window.confirm(`Clôturer le mois ${month} ? Les écritures seront verrouillées et le solde reporté.`)) return;
+    setBusyClose(true);
+    try {
+      await closeMonth(y, m);
+      const s = await monthSummary(y, m).catch(() => null);
+      if (s) setSummary(s);
+      notify('success', 'Mois clôturé', 'Le mois est verrouillé et le solde reporté.');
+    } catch (e) {
+      notify('error', 'Clôture impossible', e instanceof Error ? e.message : '');
+    } finally {
+      setBusyClose(false);
+    }
+  }
+
   return (
     <AppShell>
       <PageHeader
@@ -73,6 +93,11 @@ export default function Recette() {
           <>
             <button type="button" className="btn btn-ghost no-print" onClick={() => window.print()}><Icon name="file" size={18} />Imprimer</button>
             <button type="button" className="btn btn-ghost no-print" onClick={downloadRecettePdf} disabled={busy}><Icon name="download" size={18} />Télécharger en PDF</button>
+            {mayClose && !summary?.locked && (
+              <button type="button" className="btn btn-accent no-print" onClick={handleCloseMonth} disabled={busyClose}>
+                <Icon name="close" size={18} />Clôturer le mois
+              </button>
+            )}
           </>
         )}
       />

@@ -1278,6 +1278,36 @@ class BankReportPdfView(APIView):
                             filename=filename, content_type="application/pdf")
 
 
+class CloseMonthView(APIView):
+    """Clôture mensuelle de la caisse : verrouille le mois et reporte le solde."""
+    permission_classes = [FinanceReadRoles]
+
+    def post(self, request):
+        from finance.services import close_month
+
+        data = request.data if isinstance(request.data, dict) else {}
+        raw_y = data.get("year", request.query_params.get("year"))
+        raw_m = data.get("month", request.query_params.get("month"))
+        today = timezone.localdate()
+        try:
+            year = int(raw_y if raw_y not in (None, "") else today.year)
+            month = int(raw_m if raw_m not in (None, "") else today.month)
+            if month < 1 or month > 12:
+                raise ValueError
+        except (ValueError, TypeError):
+            return Response({"detail": "Mois invalide."}, status=400)
+        try:
+            closing = close_month(year, month)
+        except Exception as e:
+            return Response({"detail": str(e)}, status=400)
+        return Response({
+            "month": closing.month.isoformat(),
+            "opening": closing.opening,
+            "closing": closing.closing,
+            "locked": True,
+        })
+
+
 class RecettePdfView(APIView):
     """Fiche de recette mensuelle (caisse) en PDF, filtrable par site."""
     permission_classes = [FinanceReadRoles]
