@@ -13,7 +13,7 @@ const { CallLogModule } = NativeModules as unknown as {
 };
 // @ts-ignore flag injectée par Gradle (BuildConfig.FLAVOR)
 const IS_COLLECTOR: boolean = (globalThis as any).IS_COLLECTOR ?? true;
-const HUB_URL = 'https://hub.bko-quad.ml/';
+const HUB_URL = 'https://app.bkoquad.ml/';
 
 async function refreshAccess(refresh: string): Promise<string> {
   const r = await fetch(`${HUB_URL}api/v1/auth/refresh/`, {

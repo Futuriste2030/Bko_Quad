@@ -171,8 +171,8 @@ public class MainActivity extends Activity {
         card.addView(cardHint);
 
         // URL du serveur : écrite automatiquement, l'utilisateur n'y touche pas.
-        EditText hub = fieldStyled(card, "Adresse du Hub (automatique)", "https://hub.bko-quad.ml/");
-        hub.setText("https://hub.bko-quad.ml/");
+        EditText hub = fieldStyled(card, "Adresse du Hub (automatique)", "https://app.bkoquad.ml/");
+        hub.setText("https://app.bkoquad.ml/");
         hub.setEnabled(false);
         hub.setTextColor(android.graphics.Color.parseColor("#475569"));
 

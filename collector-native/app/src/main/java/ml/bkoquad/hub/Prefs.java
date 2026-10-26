@@ -32,7 +32,7 @@ public final class Prefs {
     }
 
     public static String hub(Context ctx) {
-        String h = of(ctx).getString("hub", "https://hub.bko-quad.ml/");
+        String h = of(ctx).getString("hub", "https://app.bkoquad.ml/");
         return h.endsWith("/") ? h : h + "/";
     }
 
