@@ -651,6 +651,8 @@ export const listVehicles = (): Promise<Vehicle[]> => list<Vehicle>('/vehicles/'
 export const listMaintenances = (): Promise<Maintenance[]> => list<Maintenance>('/maintenances/');
 export const listSpareParts = (): Promise<SparePart[]> => list<SparePart>('/parts/');
 export const listEntries = (): Promise<Entry[]> => list<Entry>('/entries/');
+export const updateEntry = (id: number, input: Partial<{ date: string; label: string; amount: number; category: string; site: number | null; receipt: string }>): Promise<Entry> =>
+  patchOne<Entry>(`/entries/${id}/`, input);
 export const listNotices = (): Promise<Notice[]> => list<Notice>('/notices/');
 export const listUsers = (): Promise<AdminUser[]> => list<AdminUser>('/users/');
 export const listHRUsers = (): Promise<HRUser[]> => list<HRUser>('/hr/accounts/');

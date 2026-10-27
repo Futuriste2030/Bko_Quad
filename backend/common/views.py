@@ -1011,10 +1011,35 @@ class ExpenseView(APIView):
         return Response(CashbookEntrySerializer(entry).data, status=201)
 
 
-class CashbookEntryViewSet(SiteScopeMixin, mixins.ListModelMixin, mixins.RetrieveModelMixin, viewsets.GenericViewSet):
+class CashbookEntryViewSet(SiteScopeMixin, mixins.ListModelMixin, mixins.RetrieveModelMixin,
+                           mixins.UpdateModelMixin, viewsets.GenericViewSet):
     queryset = CashbookEntry.objects.all().order_by("-date", "-id")
     serializer_class = CashbookEntrySerializer
-    permission_classes = [FinanceReadRoles]
+
+    def get_permissions(self):
+        if self.action in ("update", "partial_update"):
+            return [ManagerRoles()]
+        return [FinanceReadRoles()]
+
+    def perform_update(self, serializer):
+        from rest_framework.exceptions import PermissionDenied
+        from django.utils import timezone
+        obj = self.get_object()
+        if obj.locked:
+            raise PermissionDenied("Écriture verrouillée : modification impossible.")
+        # Mois clos -> verrouillé.
+        from finance.models import MonthlyClosing
+        first = obj.date.replace(day=1)
+        if MonthlyClosing.objects.filter(month=first).exists():
+            raise PermissionDenied("Mois clos : modification impossible.")
+        # Site scoping : responsable de site ne peut déplacer l'écriture hors de son site.
+        from common.views import scoped_site
+        imposed = scoped_site(self.request.user)
+        if imposed is not None:
+            site = serializer.validated_data.get("site", obj.site)
+            if site is None or getattr(site, "id", site) != imposed:
+                raise PermissionDenied("Vous ne pouvez modifier l'écriture que sur votre site.")
+        serializer.save()
 
 
 class MonthSummaryView(APIView):

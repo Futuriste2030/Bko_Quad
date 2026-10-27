@@ -256,6 +256,19 @@ class Command(BaseCommand):
                 InvoiceSequence.objects.all().delete()
                 TrackedLine.objects.all().update(last_sync=None)
 
+            # Backfill : les écritures de caisse antérieures sans site sont
+            # rattachées au site de Konibabougou (conservation de l'historique).
+            if partial and since is not None:
+                from catalogue.models import Site
+                ksite = Site.objects.filter(name__icontains="konibabougou").first()
+                if ksite is None:
+                    ksite = Site.objects.filter(pk=2).first()
+                if ksite is not None:
+                    from finance.models import CashbookEntry
+                    updated = CashbookEntry.objects.filter(
+                        site__isnull=True, created_at__date__lt=since).update(site=ksite)
+                    self.stdout.write(f"Écritures rattachées à {ksite.name} : {updated}")
+
         self.stdout.write(self.style.SUCCESS(
             "Purge terminée."
             + (" (partielle)" if partial else " (totale)")

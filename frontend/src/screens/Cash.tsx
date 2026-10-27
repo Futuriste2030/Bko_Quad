@@ -7,7 +7,7 @@ import { EmptyState, Field, PageHeader, Portal, SkeletonList } from '../componen
 import Icon from '../lib/icons';
 import { useAuth } from '../lib/auth';
 import { useToast } from '../lib/toast';
-import { activeSiteId, createExpense, listBookings, listEntries, listSites, type Booking, type Entry, type Site } from '../lib/api';
+import { activeSiteId, createExpense, listBookings, listEntries, listSites, updateEntry, type Booking, type Entry, type Site } from '../lib/api';
 import { fcfa } from '../lib/format';
 
 /* Caisse : le livre unique — recettes auto + recettes manuelles (ancien),
@@ -42,6 +42,14 @@ export default function Cash() {
   const [q, setQ] = useState('');
   const [f, setF] = useState('all');
   const [open, setOpen] = useState(false);
+  const [editItem, setEditItem] = useState<Entry | null>(null);
+  const [editBusy, setEditBusy] = useState(false);
+  const [eDate, setEDate] = useState('');
+  const [eLabel, setELabel] = useState('');
+  const [eAmount, setEAmount] = useState('');
+  const [eCategory, setECategory] = useState('');
+  const [eSite, setESite] = useState('');
+  const [eReceipt, setEReceipt] = useState('');
   const [busy, setBusy] = useState(false);
   const [rDate, setRDate] = useState(() => new Date().toISOString().slice(0, 10));
   const [rLabel, setRLabel] = useState('');
@@ -95,6 +103,37 @@ export default function Cash() {
       load();
     } catch (e) { notify('error', 'Enregistrement impossible', e instanceof Error ? e.message : ''); }
     finally { setBusy(false); }
+  }
+
+  function openEdit(e: Entry) {
+    setEditItem(e);
+    setEDate(e.date.slice(0, 10));
+    setELabel(e.label);
+    setEAmount(String(e.amount));
+    setECategory(e.category);
+    setESite(e.site ? String(e.site) : '');
+    setEReceipt(e.receipt || '');
+  }
+  async function submitEdit() {
+    if (!editItem) return;
+    const n = Math.round(Number(eAmount));
+    if (!n || n < 1) { notify('warning', 'Montant invalide', 'Saisissez le montant en FCFA.'); return; }
+    if (!eLabel.trim()) { notify('warning', 'Libellé requis', 'Décrivez l’écriture.'); return; }
+    setEditBusy(true);
+    try {
+      await updateEntry(editItem.id, {
+        date: eDate,
+        label: eLabel.trim(),
+        amount: n,
+        category: eCategory,
+        site: eSite ? Number(eSite) : null,
+        receipt: eReceipt.trim(),
+      });
+      notify('success', 'Écriture modifiée', `${editItem.voucher} — ${fcfa(n)}.`);
+      setEditItem(null);
+      load();
+    } catch (e) { notify('error', 'Modification impossible', e instanceof Error ? e.message : ''); }
+    finally { setEditBusy(false); }
   }
 
   return (
@@ -173,6 +212,47 @@ export default function Cash() {
           </div>
         </div></Portal>
       )}
+      {editItem && (
+        <Portal><div className="modal-backdrop" onClick={() => !editBusy && setEditItem(null)}>
+          <div className="modal form" role="dialog" aria-modal="true" aria-label="Modifier l'écriture" onClick={(e) => e.stopPropagation()}>
+            <h2>Modifier l’écriture</h2>
+            <p className="small muted">Voucher {editItem.voucher} — le bordereau reste inchangé. Mois clos = modification impossible.</p>
+            <div className="form-2">
+              <Field label="Date" required htmlFor="ex-date">
+                <input id="ex-date" type="date" value={eDate} onChange={(e) => setEDate(e.target.value)} />
+              </Field>
+              <Field label="Montant (FCFA)" required htmlFor="ex-amount">
+                <input id="ex-amount" inputMode="numeric" value={eAmount} onChange={(e) => setEAmount(e.target.value)} />
+              </Field>
+            </div>
+            <Field label="Libellé" required htmlFor="ex-label">
+              <input id="ex-label" value={eLabel} onChange={(e) => setELabel(e.target.value)} />
+            </Field>
+            <div className="form-2">
+              <Field label="Catégorie" htmlFor="ex-cat">
+                <select id="ex-cat" value={eCategory} onChange={(e) => setECategory(e.target.value)}>
+                  {Object.keys(CATS).map((c) => <option key={c} value={c}>{CATS[c]}</option>)}
+                </select>
+              </Field>
+              <Field label="Site" htmlFor="ex-site">
+                <select id="ex-site" value={eSite} onChange={(e) => setESite(e.target.value)}>
+                  <option value="">—</option>
+                  {sites.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
+                </select>
+              </Field>
+            </div>
+            <Field label="Réf. justificatif (optionnel)" htmlFor="ex-receipt">
+              <input id="ex-receipt" value={eReceipt} onChange={(e) => setEReceipt(e.target.value)} />
+            </Field>
+            <div className="modal-actions">
+              <button type="button" className="btn btn-ghost" onClick={() => setEditItem(null)} disabled={editBusy}>Revenir</button>
+              <button type="button" className="btn btn-primary" onClick={submitEdit} disabled={editBusy}>
+                {editBusy && <span className="caret" aria-hidden="true" />}Enregistrer
+              </button>
+            </div>
+          </div>
+        </div></Portal>
+      )}
       {!loading && !error && (
         <div className="list">
           {rows.map((e) => (
@@ -192,7 +272,14 @@ export default function Cash() {
                 {e.booking != null && codes[e.booking] && <span className="num">{codes[e.booking]}</span>}
                 {e.locked && <span>Verrouillée</span>}
               </div>
-              <div className="row-top"><strong className="num">{fcfa(e.amount)}</strong></div>
+              <div className="row-top">
+                <strong className="num">{fcfa(e.amount)}</strong>
+                {mayWrite && !e.locked && (
+                  <button type="button" className="btn btn-ghost btn-sm" onClick={() => openEdit(e)} aria-label="Modifier l'écriture">
+                    Modifier
+                  </button>
+                )}
+              </div>
             </article>
           ))}
         </div>
