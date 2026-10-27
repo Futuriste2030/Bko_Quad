@@ -3,11 +3,11 @@ import { Link, useSearchParams } from 'react-router-dom';
 import { useSiteLink } from '../lib/sitepath';
 import AppShell from '../components/AppShell';
 import StatusBadge from '../components/StatusBadge';
-import { ConfirmDialog, Field, PageHeader } from '../components/ui';
+import { ConfirmDialog, Field, PageHeader, Portal } from '../components/ui';
 import Icon from '../lib/icons';
 import { useToast } from '../lib/toast';
 import {
-  checkInBooking, completeBooking, listActivities, listBookings, listSlots,
+  cancelBooking, checkInBooking, completeBooking, listActivities, listBookings, listSlots,
   type Activity, type Booking, type Slot,
 } from '../lib/api';
 import { fcfa, fmtSlot } from '../lib/format';
@@ -15,7 +15,7 @@ import { parseScanned } from '../components/QrCode';
 import decodeQR from '@paulmillr/qr/decode.js';
 import { useSync } from '../lib/sync';
 import {
-  clearRide, fmtCountdown, getRide, listRides, markAlerted, remainingMs,
+  clearRide, extendRide, fmtCountdown, getRide, listRides, markAlerted, remainingMs,
   startRide, useNow, type Ride,
 } from '../lib/ride';
 import { showSystemNotification } from '../lib/notifpref';
@@ -44,6 +44,13 @@ export default function Scanner() {
   const [found, setFound] = useState<Booking | null>(null);
   const [miss, setMiss] = useState('');
   const [confirm, setConfirm] = useState<'checkin' | 'complete' | null>(null);
+  const [extendOpen, setExtendOpen] = useState(false);
+  const [extendMin, setExtendMin] = useState('30');
+  const [extendReason, setExtendReason] = useState('');
+  const [extendBusy, setExtendBusy] = useState(false);
+  const [cancelOpen, setCancelOpen] = useState(false);
+  const [cancelReason, setCancelReason] = useState('');
+  const [cancelBusy, setCancelBusy] = useState(false);
   const [busy, setBusy] = useState(false);
   const [rides, setRides] = useState<Ride[]>(() => listRides());
   const [expired, setExpired] = useState<Ride[]>([]);
@@ -289,6 +296,11 @@ export default function Scanner() {
 
   async function doComplete() {
   if (!found) return;
+    const ride = getRide(found.code);
+    if (ride && remainingMs(ride) > 0) {
+      notify('warning', 'Course non terminée', 'Le minuteur n’est pas écoulé. Attendez la fin ou annulez avec motif.');
+      return;
+    }
     setBusy(true);
     try {
       const b = await completeBooking(found.id);
@@ -299,6 +311,35 @@ export default function Scanner() {
       notify('success', 'Sortie terminée', `${b.code} — quads de retour, transition tracée.`);
     } catch (e) { notify('error', 'Clôture impossible', e instanceof Error ? e.message : ''); }
     finally { setBusy(false); }
+  }
+
+  async function submitExtend() {
+    if (!found) return;
+    const ride = getRide(found.code);
+    if (!ride) return;
+    const n = Math.max(1, Math.round(Number(extendMin)));
+    if (!extendReason.trim()) { notify('warning', 'Motif requis', 'Indiquez la raison de la rallonge.'); return; }
+    setExtendBusy(true);
+    try {
+      extendRide(found.code, n, extendReason.trim());
+      setRides(listRides());
+      notify('success', 'Temps rallongé', `+${n} min — ${extendReason.trim()}.`);
+      setExtendOpen(false); setExtendReason('');
+    } finally { setExtendBusy(false); }
+  }
+  async function submitCancel() {
+    if (!found) return;
+    if (!cancelReason.trim()) { notify('warning', 'Motif requis', 'Indiquez la raison de l’annulation.'); return; }
+    setCancelBusy(true);
+    try {
+      await cancelBooking(found.id, cancelReason.trim());
+      clearRide(found.code);
+      setRides(listRides());
+      setFound(null);
+      setCancelOpen(false); setCancelReason('');
+      notify('success', 'Course annulée', `${found.code} — annulation tracée.`);
+    } catch (e) { notify('error', 'Annulation impossible', e instanceof Error ? e.message : ''); }
+    finally { setCancelBusy(false); }
   }
 
   return (
@@ -418,6 +459,16 @@ export default function Scanner() {
               </button>
             )}
             {found.status === 'checked_in' && (
+              <>
+                <button type="button" className="btn btn-ghost" onClick={() => setExtendOpen(true)}>
+                  <Icon name="clock" size={18} />Rallonger
+                </button>
+                <button type="button" className="btn btn-ghost" onClick={() => setCancelOpen(true)}>
+                  <Icon name="x" size={18} />Annuler la course
+                </button>
+              </>
+            )}
+            {found.status === 'checked_in' && (
               <Link to={link("/factures")} className="btn btn-ghost">Encaisser le solde</Link>
             )}
             <button type="button" className="btn btn-ghost" onClick={() => { setFound(null); if (supported) void startCam(); }}>
@@ -441,6 +492,43 @@ export default function Scanner() {
           onConfirm={confirm === 'checkin' ? doCheckIn : doComplete}
           onClose={() => !busy && setConfirm(null)}
         />
+      )}
+      {extendOpen && found && (
+        <Portal><div className="modal-backdrop" onClick={() => !extendBusy && setExtendOpen(false)}>
+          <div className="modal form" role="dialog" aria-modal="true" aria-label="Rallonger la course" onClick={(e) => e.stopPropagation()}>
+            <h2>Rallonger la course</h2>
+            <p className="small muted">Sans impact sur le prix : on anticipe un imprévu (réparation, retard). Le minuteur est prolongé.</p>
+            <Field label="Minutes à ajouter" required htmlFor="ex-min">
+              <input id="ex-min" inputMode="numeric" value={extendMin} onChange={(e) => setExtendMin(e.target.value)} placeholder="30" />
+            </Field>
+            <Field label="Motif" required htmlFor="ex-reason">
+              <input id="ex-reason" value={extendReason} onChange={(e) => setExtendReason(e.target.value)} placeholder="Ex. réparation moteur" />
+            </Field>
+            <div className="modal-actions">
+              <button type="button" className="btn btn-ghost" onClick={() => setExtendOpen(false)} disabled={extendBusy}>Revenir</button>
+              <button type="button" className="btn btn-primary" onClick={submitExtend} disabled={extendBusy}>
+                {extendBusy && <span className="caret" aria-hidden="true" />}Rallonger
+              </button>
+            </div>
+          </div>
+        </div></Portal>
+      )}
+      {cancelOpen && found && (
+        <Portal><div className="modal-backdrop" onClick={() => !cancelBusy && setCancelOpen(false)}>
+          <div className="modal form" role="dialog" aria-modal="true" aria-label="Annuler la course" onClick={(e) => e.stopPropagation()}>
+            <h2>Annuler la course en cours</h2>
+            <p className="small muted">Annulation tracée avec motif. Le talon repasse en annulé.</p>
+            <Field label="Motif d’annulation" required htmlFor="cx-reason">
+              <input id="cx-reason" value={cancelReason} onChange={(e) => setCancelReason(e.target.value)} placeholder="Ex. panne moteur" />
+            </Field>
+            <div className="modal-actions">
+              <button type="button" className="btn btn-ghost" onClick={() => setCancelOpen(false)} disabled={cancelBusy}>Revenir</button>
+              <button type="button" className="btn btn-accent" onClick={submitCancel} disabled={cancelBusy}>
+                {cancelBusy && <span className="caret" aria-hidden="true" />}Annuler la course
+              </button>
+            </div>
+          </div>
+        </div></Portal>
       )}
     </AppShell>
   );

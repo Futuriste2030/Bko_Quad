@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 
 /* Minuteur de sortie : démarré au premier scan (arrivée), calé sur la durée
    de la formule. Persisté en local pour survivre au rechargement. */
+export interface RideExtension { minutes: number; reason: string; at: number; }
 export interface Ride {
   code: string;
   bookingId: number;
@@ -9,6 +10,7 @@ export interface Ride {
   endsAt: number;
   durationMin: number;
   alerted: boolean;
+  extensions?: RideExtension[];
 }
 
 const KEY = 'bko.rides';
@@ -53,6 +55,20 @@ export function clearRide(code: string): void {
   const all = readAll();
   delete all[code.toUpperCase()];
   writeAll(all);
+}
+
+export function extendRide(code: string, extraMin: number, reason: string): Ride | null {
+  const all = readAll();
+  const r = all[code.toUpperCase()];
+  if (!r) return null;
+  const mins = Math.max(1, extraMin);
+  r.endsAt += mins * 60_000;
+  r.durationMin += mins;
+  r.alerted = false;
+  r.extensions = r.extensions ?? [];
+  r.extensions.push({ minutes: mins, reason: reason.trim(), at: Date.now() });
+  writeAll(all);
+  return r;
 }
 
 export function remainingMs(ride: Ride, now = Date.now()): number {
