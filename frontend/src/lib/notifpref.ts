@@ -38,6 +38,7 @@ export function currentPerm(): NotifPerm {
 
 interface NativeBridge {
   notify: (title: string, body: string, tag: string) => void;
+  openExternal?: (url: string) => void;
 }
 
 function nativeBridge(): NativeBridge | null {

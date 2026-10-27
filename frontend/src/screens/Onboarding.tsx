@@ -55,7 +55,12 @@ export default function Onboarding({ onDone }: { onDone: () => void }) {
   async function askCam() {
     try {
       if (!navigator.mediaDevices?.getUserMedia) { setCam('unavailable'); return; }
-      const s = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' }, audio: false });
+      let s: MediaStream;
+      try {
+        s = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' }, audio: false });
+      } catch {
+        s = await navigator.mediaDevices.getUserMedia({ video: true, audio: false });
+      }
       s.getTracks().forEach((t) => t.stop());
       setCam('granted');
     } catch { setCam('denied'); }

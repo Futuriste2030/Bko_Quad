@@ -150,7 +150,12 @@ export default function Document() {
         + ` Payé ${fcfa(pays.reduce((s, p) => s + p.amount, 0))} sur un total de ${fcfa(booking.total)}.`
         + ` Présentez le code ${booking.code} à l’arrivée.`;
       const logged = await logMessage(booking.id, text);
-      window.open(logged.wa_me, '_blank', 'noopener');
+      const native = (window as unknown as { BkoNative?: { openExternal?: (u: string) => void } }).BkoNative;
+      if (native && typeof native.openExternal === 'function') {
+        native.openExternal(logged.wa_me);
+      } else {
+        window.open(logged.wa_me, '_blank', 'noopener');
+      }
       notify('success', 'Reçu prêt à envoyer', 'WhatsApp ouvert avec le texte du reçu.');
     } catch (e) { notify('error', 'Envoi impossible', e instanceof Error ? e.message : ''); }
     finally { setBusy(false); }

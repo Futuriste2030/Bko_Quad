@@ -265,6 +265,36 @@ public class MainActivity extends Activity {
             }
 
             @Override
+            public boolean shouldOverrideUrlLoading(WebView view, String url) {
+                // Liens externes (WhatsApp, téléphone, e-mail, autres sites) :
+                // on les ouvre dans l'application dédiée plutôt que dans la WebView.
+                if (url == null) return false;
+                String lower = url.toLowerCase();
+                if (lower.startsWith("whatsapp:") || lower.startsWith("tel:") || lower.startsWith("mailto:")
+                        || lower.startsWith("sms:") || lower.contains("wa.me/") || lower.contains("api.whatsapp.com/")) {
+                    try {
+                        startActivity(new Intent(Intent.ACTION_VIEW, Uri.parse(url)));
+                    } catch (Exception e) {
+                        Toast.makeText(MainActivity.this, "Impossible d'ouvrir le lien.", Toast.LENGTH_SHORT).show();
+                    }
+                    return true;
+                }
+                // Liens http/https hors du Hub : navigateur externe.
+                if (lower.startsWith("http://") || lower.startsWith("https://")) {
+                    String hub = Prefs.hub(MainActivity.this);
+                    if (hub != null && !url.startsWith(hub)) {
+                        try {
+                            startActivity(new Intent(Intent.ACTION_VIEW, Uri.parse(url)));
+                        } catch (Exception e) {
+                            Toast.makeText(MainActivity.this, "Impossible d'ouvrir le lien.", Toast.LENGTH_SHORT).show();
+                        }
+                        return true;
+                    }
+                }
+                return false;
+            }
+
+            @Override
             public void onReceivedSslError(WebView view, SslErrorHandler handler, SslError error) {
                 // Test local uniquement : le Vite dev utilise un certificat
                 // auto-signé (basicSsl). En prod (HTTPS public), refusé.

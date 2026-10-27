@@ -885,11 +885,22 @@ export async function downloadPdf(url: string, filename: string): Promise<void> 
     throw new Error(err.detail ?? 'Document indisponible.');
   }
   const blob = await r.blob();
+  const file = new File([blob], filename, { type: 'application/pdf' });
+  /* Partage natif (iOS/Android) : plus fiable que l'attribut download. */
+  if (typeof navigator !== 'undefined' && typeof navigator.share === 'function'
+      && typeof navigator.canShare === 'function' && navigator.canShare({ files: [file] })) {
+    try {
+      await navigator.share({ files: [file], title: filename });
+      return;
+    } catch { /* annulation ou indisponible : repli sur l'ancre */ }
+  }
+  const blobUrl = URL.createObjectURL(blob);
   const link = document.createElement('a');
-  link.href = URL.createObjectURL(blob);
+  link.href = blobUrl;
   link.download = filename;
+  link.rel = 'noopener';
   document.body.appendChild(link); link.click(); link.remove();
-  setTimeout(() => URL.revokeObjectURL(link.href), 5000);
+  setTimeout(() => URL.revokeObjectURL(blobUrl), 5000);
 }
 
 export interface TrackedLine { id: number; label: string; number: string; site: number | null; site_name: string; active: boolean; collect_enabled: boolean; last_sync: string | null }
