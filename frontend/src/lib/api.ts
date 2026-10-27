@@ -471,6 +471,15 @@ export async function cancelBooking(id: number, reason: string): Promise<Booking
   return r.json();
 }
 
+export async function modifyBooking(id: number, input: Record<string, unknown>): Promise<Booking> {
+  const r = await req(`/bookings/${id}/modify/`, { method: 'POST', body: JSON.stringify(input) });
+  if (!r.ok) {
+    const err = await r.json().catch(() => ({}));
+    throw new Error(err.detail ?? 'Modification impossible.');
+  }
+  return r.json();
+}
+
 export function todayISO(): string { return new Date().toISOString().slice(0, 10); }
 export function draftKey(): string { return 'bko.draft'; }
 

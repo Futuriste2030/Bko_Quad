@@ -538,6 +538,100 @@ class BookingViewSet(SiteScopeMixin, viewsets.ModelViewSet):
         return self._act(request, pk, Booking.EXPIRED)
 
     @action(detail=True, methods=["post"])
+    def modify(self, request, pk=None):
+        # Modification d'une réservation existante (créneau, formule, personnes,
+        # quads, lignes). Tracée dans l'historique. Interdite après encaissement
+        # complet (sinon remboursement à gérer) et après arrivée.
+        from bookings.models import Booking, BookingEvent, BookingLine
+        from bookings.services import price_line, slot_units, BookingError
+        from catalogue.models import Activity, Slot
+        b = Booking.objects.filter(pk=pk).first()
+        if b is None:
+            return self._out_of_site(pk)
+        site = scoped_site(self.request.user)
+        if site is not None and b.slot.activity.site_id != site:
+            return self._out_of_site(pk)
+        if b.status in (Booking.CHECKED_IN, Booking.COMPLETED):
+            return Response({"detail": "Réservation déjà arrivée/terminée : modification impossible."}, status=400)
+        if b.payments.filter(status="paid").exists():
+            return Response({"detail": "Réservation déjà encaissée : modification interdite (remboursement à gérer)."}, status=400)
+
+        before = {"slot": b.slot_id, "persons": b.persons, "quads": b.quads,
+                  "total": b.total, "activity": b.slot.activity_id}
+
+        # Créneau / formule
+        slot = b.slot
+        raw_slot = request.data.get("slot")
+        if raw_slot is not None:
+            slot = Slot.objects.filter(pk=raw_slot).first()
+            if slot is None or (site is not None and slot.activity.site_id != site):
+                return Response({"detail": "Créneau invalide."}, status=400)
+        pricing = slot.activity
+        raw_activity = request.data.get("activity")
+        if raw_activity is not None:
+            pricing = Activity.objects.filter(pk=raw_activity).first()
+            if pricing is None or pricing.site_id != slot.activity.site_id:
+                return Response({"detail": "Formule invalide."}, status=400)
+
+        # Lignes
+        raw_lines = request.data.get("lines", None)
+        if raw_lines is not None:
+            norm_lines = []
+            for entry in raw_lines:
+                try:
+                    if isinstance(entry, dict):
+                        norm_lines.append((int(entry["persons"]), int(entry["quads"]),
+                                           int(entry.get("discount", 0) or 0)))
+                    else:
+                        norm_lines.append((int(entry[0]), int(entry[1]), 0))
+                except (KeyError, IndexError, ValueError, TypeError):
+                    return Response({"detail": "Ligne invalide."}, status=400)
+            if not norm_lines:
+                return Response({"detail": "Au moins 1 ligne."}, status=400)
+        else:
+            persons = int(request.data.get("persons", b.persons))
+            quads = int(request.data.get("quads", b.quads))
+            norm_lines = [(persons, quads, 0)]
+
+        # Validation + prix
+        try:
+            priced = [price_line(pricing=pricing, persons=p, quads=q) for p, q, _ in norm_lines]
+        except BookingError as e:
+            return Response({"detail": str(e)}, status=400)
+        units = slot_units(pricing, slot)
+        priced = [(u, t * units) for u, t in priced]
+        total_lines = sum(t for _, t in priced)
+        persons_total = sum(p for p, _, _ in norm_lines)
+        quads_total = sum(q for _, q, _ in norm_lines)
+        discount_total = sum(d for _, _, d in norm_lines)
+        total = max(0, total_lines - discount_total)
+
+        with transaction.atomic():
+            b.slot = slot
+            b.persons = persons_total
+            b.quads = quads_total
+            b.unit_price = priced[0][0] if priced else b.unit_price
+            b.total = total
+            b.units = units
+            pass
+            if request.data.get("source"):
+                b.source = request.data.get("source")
+            b.save()
+            # Recréer les lignes
+            b.lines.all().delete()
+            for rank, (p, q, d) in enumerate(norm_lines, start=1):
+                BookingLine.objects.create(booking=b, rank=rank, persons=p, quads=q,
+                                          line_total=priced[rank-1][1],
+                                          discount=d)
+            BookingEvent.objects.create(
+                booking=b, actor=request.user, action="modified",
+                before=before,
+                after={"slot": b.slot_id, "persons": b.persons, "quads": b.quads,
+                       "total": b.total, "activity": pricing.id},
+            )
+        return Response(BookingSerializer(b).data)
+
+    @action(detail=True, methods=["post"])
     def discount(self, request, pk=None):
         # Remise manuelle : moniteur, responsable ou admin. Motif obligatoire,
         # tracée. Interdite après encaissement (sinon remboursement à gérer).
