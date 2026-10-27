@@ -878,6 +878,8 @@ export async function downloadExport(query: ExportQuery, format: ExportFormat): 
 
 /* Téléchargement PDF serveur (reçu, facture, rapport bancaire) : blob + nom. */
 export async function downloadPdf(url: string, filename: string): Promise<void> {
+  const native = (window as unknown as { BkoNative?: { downloadUrl?: (u: string, f: string, t: string) => void; saveFile?: (b: string, f: string, m: string) => void } }).BkoNative;
+  if (!native) alert('Pont natif absent (APK non à jour ?)');
   const r = await fetch(`/api/v1${withSite(url)}`, { headers: authHeaders() });
   if (r.status === 401) { logout(); throw new Error('Session expirée, reconnectez-vous.'); }
   if (!r.ok) {
@@ -886,7 +888,6 @@ export async function downloadPdf(url: string, filename: string): Promise<void> 
   }
   const blob = await r.blob();
   /* APK WebView : téléchargement direct via le pont natif (plus fiable). */
-  const native = (window as unknown as { BkoNative?: { downloadUrl?: (u: string, f: string, t: string) => void; saveFile?: (b: string, f: string, m: string) => void } }).BkoNative;
   const token = localStorage.getItem('bko.access') ?? '';
   if (native && typeof native.downloadUrl === 'function') {
     native.downloadUrl(`/api/v1${withSite(url)}`, filename, token);

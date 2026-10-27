@@ -46,9 +46,11 @@ interface NativeBridge {
 export function nativePrint(): void {
   const w = window as unknown as { BkoNative?: Partial<NativeBridge> };
   if (w.BkoNative && typeof w.BkoNative.printPage === 'function') {
-    try { w.BkoNative.printPage!(); return; } catch { /* repli */ }
+    try { w.BkoNative.printPage!(); return; } catch (e) { alert('Impression native échouée: ' + (e as Error)?.message); }
+  } else {
+    alert('Pont natif absent — impression web.');
   }
-  window.print();
+  try { window.print(); } catch (e) { alert('Impression web échouée: ' + (e as Error)?.message); }
 }
 
 function nativeBridge(): NativeBridge | null {
