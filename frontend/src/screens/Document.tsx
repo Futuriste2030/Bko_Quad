@@ -5,13 +5,13 @@ import AppShell from '../components/AppShell';
 import { CompanyFooter, CompanyHeader } from '../components/CompanyDoc';
 import QrCode, { qrValue } from '../components/QrCode';
 import StatusBadge from '../components/StatusBadge';
-import { EmptyState, PageHeader, SkeletonList } from '../components/ui';
+import { EmptyState, Field, PageHeader, Portal, SkeletonList } from '../components/ui';
 import Icon from '../lib/icons';
 import { useAuth } from '../lib/auth';
 import { useCompany } from '../lib/company';
 import { useToast } from '../lib/toast';
 import {
-  downloadPdf, listActivities, listBookings, listCustomers, listInvoices, listPayments, listSites, listSlots, listVehicles, logMessage, setBookingVehicles,
+  downloadPdf, listActivities, listBookings, listCustomers, listInvoices, listPayments, listSites, listSlots, listVehicles, logMessage, modifyBooking, setBookingVehicles,
   type Activity, type Booking, type Customer, type Invoice, type Payment, type Site, type Slot, type Vehicle,
 } from '../lib/api';
 import { factureNumber, fcfa, fmtPhone, fmtSlot, norm, dureeLibelle } from '../lib/format';
@@ -55,6 +55,11 @@ export default function Document() {
   const { can } = useAuth();
   const mayAssign = can('responsable', 'admin');
   const [booking, setBooking] = useState<Booking | null>(null);
+  const [modOpen, setModOpen] = useState(false);
+  const [modBusy, setModBusy] = useState(false);
+  const [modPersons, setModPersons] = useState('');
+  const [modQuads, setModQuads] = useState('');
+  const [modSource, setModSource] = useState('phone');
   const [customer, setCustomer] = useState<Customer | null>(null);
   const [activity, setActivity] = useState<Activity | null>(null);
   const [slot, setSlot] = useState<Slot | null>(null);
@@ -162,6 +167,29 @@ export default function Document() {
     finally { setBusy(false); }
   }
 
+  function openModify() {
+    if (!booking) return;
+    setModPersons(String(booking.persons));
+    setModQuads(String(booking.quads));
+    setModSource(booking.source ?? 'phone');
+    setModOpen(true);
+  }
+  async function submitModify() {
+    if (!booking) return;
+    setModBusy(true);
+    try {
+      const upd = await modifyBooking(booking.id, {
+        persons: Number(modPersons) || booking.persons,
+        quads: Number(modQuads) || booking.quads,
+        source: modSource,
+      });
+      setBooking(upd);
+      setModOpen(false);
+      notify('success', 'Réservation modifiée', `${upd.code} — ${upd.total} FCFA.`);
+    } catch (e) { notify('error', 'Modification impossible', e instanceof Error ? e.message : ''); }
+    finally { setModBusy(false); }
+  }
+
   return (
     <AppShell>
       <PageHeader
@@ -172,6 +200,9 @@ export default function Document() {
         actions={(
           <>
             <button type="button" className="btn btn-ghost no-print" onClick={() => nativePrint()}><Icon name="file" size={18} />Imprimer</button>
+            {booking && mayAssign && (
+              <button type="button" className="btn btn-ghost no-print" onClick={openModify}><Icon name="settings" size={18} />Modifier</button>
+            )}
             {booking && <button type="button" className="btn btn-ghost no-print" onClick={download}><Icon name="download" size={18} />Télécharger</button>}
           </>
         )}
@@ -319,6 +350,36 @@ export default function Document() {
           </div>
           <CompanyFooter showConditions={false} />
         </section>
+      )}
+      {modOpen && booking && (
+        <Portal><div className="modal-backdrop" onClick={() => !modBusy && setModOpen(false)}>
+          <div className="modal form" role="dialog" aria-modal="true" aria-label="Modifier la réservation" onClick={(e) => e.stopPropagation()}>
+            <h2>Modifier la réservation</h2>
+            <p className="small muted">Créneau et formule inchangés ici. Modifiez les personnes, quads et la source.</p>
+            <div className="form-2">
+              <Field label="Personnes" required htmlFor="md-pers">
+                <input id="md-pers" inputMode="numeric" value={modPersons} onChange={(e) => setModPersons(e.target.value)} />
+              </Field>
+              <Field label="Quads" required htmlFor="md-quads">
+                <input id="md-quads" inputMode="numeric" value={modQuads} onChange={(e) => setModQuads(e.target.value)} />
+              </Field>
+            </div>
+            <Field label="Source" htmlFor="md-src">
+              <select id="md-src" value={modSource} onChange={(e) => setModSource(e.target.value)}>
+                <option value="phone">Téléphone</option>
+                <option value="whatsapp">WhatsApp</option>
+                <option value="onsite">Sur place</option>
+                <option value="online">En ligne</option>
+              </select>
+            </Field>
+            <div className="modal-actions">
+              <button type="button" className="btn btn-ghost" onClick={() => setModOpen(false)} disabled={modBusy}>Revenir</button>
+              <button type="button" className="btn btn-primary" onClick={submitModify} disabled={modBusy}>
+                {modBusy && <span className="caret" aria-hidden="true" />}Enregistrer
+              </button>
+            </div>
+          </div>
+        </div></Portal>
       )}
     </AppShell>
   );
