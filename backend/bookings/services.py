@@ -94,15 +94,16 @@ def is_velo_activity(name):
     return "velo" in _norm_txt(name)
 
 
-def price_for_occupancy(*, persons, quads):
-    """Détail tarifaire standard : quads solo à 25 000, quads duo à 30 000.
+def price_for_occupancy(*, persons, quads, solo_price=PRICE_SOLO_QUAD):
+    """Détail tarifaire standard : quads solo à solo_price, quads duo à
+    solo_price + 5 000 (PRICE_DUO_EXTRA).
 
     Chaque quad prend 1 ou 2 personnes : duo = persons - quads (quads à 2),
     solo = 2 * quads - persons (quads à 1). Total entier FCFA.
     """
     duo = persons - quads
     solo = 2 * quads - persons
-    total = solo * PRICE_SOLO_QUAD + duo * PRICE_DUO_QUAD
+    total = solo * solo_price + duo * (solo_price + PRICE_DUO_EXTRA)
     return {"solo": solo, "duo": duo, "total": total}
 
 
@@ -153,8 +154,9 @@ def price_line(*, pricing, persons, quads):
         raise BookingError(
             "Chaque quad prend 1 ou 2 personnes : prévoyez plus de quads."
         )
-    parts = price_for_occupancy(persons=persons, quads=quads)
-    return PRICE_SOLO_QUAD, parts["total"]
+    parts = price_for_occupancy(persons=persons, quads=quads,
+                                solo_price=pricing.base_price)
+    return pricing.base_price, parts["total"]
 
 
 def _overlapping_active_bookings(site, start, end, exclude_booking=None):
