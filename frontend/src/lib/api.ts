@@ -479,6 +479,22 @@ export async function modifyBooking(id: number, input: Record<string, unknown>):
   }
   return r.json();
 }
+export async function cancelBookingLines(id: number, lineIds: number[]): Promise<Booking & { refund_due?: number; paid_total?: number }> {
+  const r = await req(`/bookings/${id}/cancel_lines/`, { method: 'POST', body: JSON.stringify({ line_ids: lineIds }) });
+  if (!r.ok) {
+    const err = await r.json().catch(() => ({}));
+    throw new Error(err.detail ?? 'Annulation partielle impossible.');
+  }
+  return r.json();
+}
+export async function refundBooking(id: number, amount: number, reason: string): Promise<Booking & { refunded?: number; refund_due?: number }> {
+  const r = await req(`/bookings/${id}/refund/`, { method: 'POST', body: JSON.stringify({ amount, reason }) });
+  if (!r.ok) {
+    const err = await r.json().catch(() => ({}));
+    throw new Error(err.detail ?? 'Remboursement impossible.');
+  }
+  return r.json();
+}
 
 export function todayISO(): string { return new Date().toISOString().slice(0, 10); }
 export function draftKey(): string { return 'bko.draft'; }

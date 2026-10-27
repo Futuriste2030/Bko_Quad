@@ -538,6 +538,135 @@ class BookingViewSet(SiteScopeMixin, viewsets.ModelViewSet):
         return self._act(request, pk, Booking.EXPIRED)
 
     @action(detail=True, methods=["post"])
+    def cancel_lines(self, request, pk=None):
+        # Annulation partielle : on retire une ou plusieurs lignes (quads) d'une
+        # réservation multi-quads (panne, annulation d'un quad). Recalcul du prix.
+        # Interdit après arrivée/terminaison ou après encaissement complet
+        # (remboursement à gérer via l'action refund).
+        from bookings.models import Booking, BookingEvent, BookingLine
+        from bookings.services import price_line, slot_units, BookingError
+        from catalogue.models import Activity
+        b = Booking.objects.filter(pk=pk).first()
+        if b is None:
+            return self._out_of_site(pk)
+        site = scoped_site(self.request.user)
+        if site is not None and b.slot.activity.site_id != site:
+            return self._out_of_site(pk)
+        if b.status in (Booking.CHECKED_IN, Booking.COMPLETED, Booking.CANCELLED):
+            return Response({"detail": "Réservation déjà arrivée/terminée/annulée : annulation partielle impossible."}, status=400)
+
+        raw_ids = request.data.get("line_ids", [])
+        raw_ranks = request.data.get("ranks", [])
+        try:
+            ids = [int(x) for x in raw_ids]
+            ranks = [int(x) for x in raw_ranks]
+        except (ValueError, TypeError):
+            return Response({"detail": "line_ids/ranks invalides."}, status=400)
+        if not ids and not ranks:
+            return Response({"detail": "Indiquez les lignes à annuler (line_ids ou ranks)."}, status=400)
+
+        lines_qs = b.lines.all()
+        to_remove = []
+        for ln in lines_qs:
+            if ln.id in ids or ln.rank in ranks:
+                to_remove.append(ln)
+        if not to_remove:
+            return Response({"detail": "Aucune ligne correspondante."}, status=400)
+        if len(to_remove) >= lines_qs.count():
+            return Response({"detail": "Impossible d'annuler toutes les lignes : annulez la réservation entière."}, status=400)
+
+        before = {"lines": [{"rank": l.rank, "persons": l.persons, "quads": l.quads,
+                             "line_total": l.line_total} for l in lines_qs],
+                  "total": b.total}
+
+        pricing = b.slot.activity
+        remaining_lines = [l for l in lines_qs if l not in to_remove]
+        norm_lines = [(l.persons, l.quads, l.discount) for l in remaining_lines]
+        try:
+            priced = [price_line(pricing=pricing, persons=p, quads=q) for p, q, _ in norm_lines]
+        except BookingError as e:
+            return Response({"detail": str(e)}, status=400)
+        units = b.units or slot_units(pricing, b.slot)
+        priced = [(u, t * units) for u, t in priced]
+        total = max(0, sum(t for _, t in priced) - sum(d for _, _, d in norm_lines))
+
+        with transaction.atomic():
+            for ln in to_remove:
+                ln.delete()
+            # réindexer les ranks
+            for rank, ln in enumerate(remaining_lines, start=1):
+                ln.rank = rank
+                ln.line_total = priced[rank - 1][1]
+                ln.save(update_fields=["rank", "line_total"])
+            b.persons = sum(p for p, _, _ in norm_lines)
+            b.quads = sum(q for _, q, _ in norm_lines)
+            b.total = total
+            b.unit_price = priced[0][0] if priced else b.unit_price
+            b.save()
+            BookingEvent.objects.create(
+                booking=b, actor=request.user, action="partial_cancel",
+                before=before,
+                after={"lines": [{"rank": l.rank, "persons": l.persons, "quads": l.quads,
+                                  "line_total": l.line_total} for l in b.lines.all()],
+                       "total": b.total, "removed": [l.id for l in to_remove]},
+            )
+
+        paid_total = sum(p.amount for p in b.payments.filter(status="paid"))
+        refund_due = max(0, paid_total - b.total)
+        data = BookingSerializer(b).data
+        data["refund_due"] = refund_due
+        data["paid_total"] = paid_total
+        return Response(data)
+
+    @action(detail=True, methods=["post"])
+    def refund(self, request, pk=None):
+        # Retour de monnaie : retrait en caisse du montant à rembourser,
+        # puis marquage de la réservation comme soldée (trace).
+        from bookings.models import Booking, BookingEvent
+        from finance.models import CashbookEntry
+        from finance.services import add_entry
+        b = Booking.objects.filter(pk=pk).first()
+        if b is None:
+            return self._out_of_site(pk)
+        site = scoped_site(self.request.user)
+        if site is not None and b.slot.activity.site_id != site:
+            return self._out_of_site(pk)
+        if not (request.user.is_superuser
+                or getattr(request.user, "role", None) in ("responsable", "admin")):
+            return Response({"detail": "Non autorisé."}, status=403)
+        paid_total = sum(p.amount for p in b.payments.filter(status="paid"))
+        refund_due = max(0, paid_total - b.total)
+        amount = int(request.data.get("amount", refund_due) or 0)
+        if amount < 1:
+            return Response({"detail": "Montant à rembourser invalide."}, status=400)
+        if amount > refund_due:
+            return Response({"detail": f"Montant supérieur au remboursement dû ({refund_due})."}, status=400)
+        reason = str(request.data.get("reason", "")).strip() or "Remboursement annulation partielle"
+        try:
+            entry = add_entry(
+                day=timezone.localdate(),
+                category="autre",
+                label=f"Remboursement {b.code} — {reason}",
+                direction=CashbookEntry.OUT,
+                amount=amount,
+                site=b.slot.activity.site,
+                receipt=f"REM-{b.code}",
+                created_by=request.user,
+            )
+        except Exception as e:
+            return Response({"detail": str(e)}, status=400)
+        BookingEvent.objects.create(
+            booking=b, actor=request.user, action="refunded",
+            before={"refund_due": refund_due},
+            after={"refunded": amount, "entry": entry.id},
+        )
+        data = BookingSerializer(b).data
+        data["refunded"] = amount
+        data["entry_id"] = entry.id
+        data["refund_due"] = max(0, refund_due - amount)
+        return Response(data)
+
+    @action(detail=True, methods=["post"])
     def modify(self, request, pk=None):
         # Modification d'une réservation existante (créneau, formule, personnes,
         # quads, lignes). Tracée dans l'historique. Interdite après encaissement
