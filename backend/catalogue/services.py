@@ -9,6 +9,7 @@ from bookings.services import is_koni_site, is_orpheus_site
 from catalogue.models import Activity, Site
 
 QUAD_ADULTE = ("Quad 1H", 60, 25000, 0, 10)
+QUAD_2H = ("Quad 2H", 120, 40000, 0, 10)
 QUAD_ENFANT = ("Quad enfant 15 min", 15, 5000, 0, 6)
 VELO_ELECTRIQUE = ("Vélo électrique 1H", 60, 5000, 0, 10)
 VELO_MANUEL = ("Vélo manuel 1H", 60, 3000, 0, 10)
@@ -23,7 +24,12 @@ def standard_formulas(site):
     - autres sites : quads adultes et vélos.
     """
     name = site.name or ""
-    rows = [QUAD_ENFANT] if is_orpheus_site(name) else [QUAD_ADULTE]
+    if is_orpheus_site(name):
+        rows = [QUAD_ENFANT]
+    elif is_koni_site(name):
+        rows = [QUAD_ADULTE, QUAD_2H]
+    else:
+        rows = [QUAD_ADULTE]
     if not is_koni_site(name):
         rows += [VELO_ELECTRIQUE, VELO_MANUEL]
     rows.append(CRENEAU_LIBRE)
