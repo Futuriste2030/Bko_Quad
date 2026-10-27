@@ -912,7 +912,9 @@ export async function downloadPdf(url: string, filename: string): Promise<void> 
   link.download = filename;
   link.rel = 'noopener';
   document.body.appendChild(link); link.click(); link.remove();
-  setTimeout(() => URL.revokeObjectURL(blobUrl), 5000);
+  /* Repli : ouvrir le PDF dans un nouvel onglet si le téléchargement ne démarre pas. */
+  try { window.open(blobUrl, '_blank', 'noopener'); } catch { /* ignore */ }
+  setTimeout(() => URL.revokeObjectURL(blobUrl), 10000);
 }
 
 export interface TrackedLine { id: number; label: string; number: string; site: number | null; site_name: string; active: boolean; collect_enabled: boolean; last_sync: string | null }
