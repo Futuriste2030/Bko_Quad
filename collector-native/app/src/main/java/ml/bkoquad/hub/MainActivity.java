@@ -421,20 +421,81 @@ public class MainActivity extends Activity {
         return false;
     }
 
-    /** Impression de la page courante (via PrintManager). */
+    /** Impression de la page courante. */
     public void printPage() {
         if (web == null) return;
         try {
-            PrintManager pm = (PrintManager) getSystemService(PRINT_SERVICE);
-            android.print.PrintDocumentAdapter adapter = web.createPrintDocumentAdapter("BKO Hub");
-            pm.print("BKO Hub", adapter, new PrintAttributes.Builder().build());
+            // Android WebView gère window.print() via le PrintManager.
+            web.evaluateJavascript("window.print()", null);
         } catch (Exception e) {
             Toast.makeText(this, "Impression impossible : " + e.getMessage(), Toast.LENGTH_SHORT).show();
         }
     }
 
+    /** Télécharge une URL (avec jeton Bearer) et enregistre dans les Téléchargements. */
+    public void downloadUrl(String url, String filename, String token) {
+        new Thread(() -> {
+            try {
+                java.net.URL u = new java.net.URL(url);
+                java.net.HttpURLConnection c = (java.net.HttpURLConnection) u.openConnection();
+                if (token != null && !token.isEmpty()) {
+                    c.setRequestProperty("Authorization", "Bearer " + token);
+                }
+                c.connect();
+                java.io.InputStream in = c.getInputStream();
+                java.io.ByteArrayOutputStream baos = new java.io.ByteArrayOutputStream();
+                byte[] buf = new byte[8192];
+                int n;
+                while ((n = in.read(buf)) != -1) baos.write(buf, 0, n);
+                in.close();
+                saveBytes(baos.toByteArray(), filename, c.getContentType());
+            } catch (Exception e) {
+                runOnUiThread(() -> Toast.makeText(this, "Téléchargement impossible : " + e.getMessage(), Toast.LENGTH_LONG).show());
+            }
+        }).start();
+    }
+
+    /** Enregistre des octets dans les Téléchargements. */
+    private void saveBytes(byte[] data, String filename, String mime) {
+        try {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                ContentValues values = new ContentValues();
+                values.put(MediaStore.Downloads.DISPLAY_NAME, filename);
+                values.put(MediaStore.Downloads.MIME_TYPE, mime == null ? "application/pdf" : mime);
+                values.put(MediaStore.Downloads.IS_PENDING, 1);
+                Uri uri = getContentResolver().insert(MediaStore.Downloads.EXTERNAL_CONTENT_URI, values);
+                if (uri != null) {
+                    try (OutputStream os = getContentResolver().openOutputStream(uri)) {
+                        if (os != null) os.write(data);
+                    }
+                    values.clear();
+                    values.put(MediaStore.Downloads.IS_PENDING, 0);
+                    getContentResolver().update(uri, values, null, null);
+                    runOnUiThread(() -> Toast.makeText(this, "Fichier enregistré : " + filename, Toast.LENGTH_SHORT).show());
+                }
+            } else {
+                File dir = Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS);
+                if (dir != null && !dir.exists()) dir.mkdirs();
+                File out = new File(dir, filename);
+                try (FileOutputStream fos = new FileOutputStream(out)) {
+                    fos.write(data);
+                }
+                runOnUiThread(() -> Toast.makeText(this, "Fichier enregistré : " + filename, Toast.LENGTH_SHORT).show());
+            }
+        } catch (Exception e) {
+            runOnUiThread(() -> Toast.makeText(this, "Enregistrement impossible : " + e.getMessage(), Toast.LENGTH_LONG).show());
+        }
+    }
+
     /** Enregistre un fichier (base64) dans les Téléchargements. */
     public void saveFile(String base64, String filename, String mime) {
+        try {
+            byte[] data = Base64.decode(base64, Base64.DEFAULT);
+            saveBytes(data, filename, mime == null ? "application/pdf" : mime);
+        } catch (Exception e) {
+            runOnUiThread(() -> Toast.makeText(this, "Enregistrement impossible : " + e.getMessage(), Toast.LENGTH_LONG).show());
+        }
+    }
         try {
             byte[] data = Base64.decode(base64, Base64.DEFAULT);
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {

@@ -44,4 +44,9 @@ public final class BkoBridge {
     public void saveFile(String base64, String filename, String mime) {
         activity.saveFile(base64, filename, mime);
     }
+
+    @JavascriptInterface
+    public void downloadUrl(String url, String filename, String token) {
+        activity.downloadUrl(url, filename, token);
+    }
 }
