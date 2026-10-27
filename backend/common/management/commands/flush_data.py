@@ -11,8 +11,8 @@ Usage (sur le VPS, depuis backend/) :
 
 Conservé toujours : User, Site, Activity (formules), CompanyProfile, TrackedLine (config).
 Réinitialisé (purge totale seulement) : compteurs de factures (InvoiceSequence) -> 0.
-Supprimé : réservations, paiements, factures, écritures de caisse/banque créées
-           dans la fenêtre, et leurs dépendances.
+Supprimé : réservations, paiements, factures, écritures de caisse/banque, appels,
+           anomalies, clients, journaux d'audit créés dans la fenêtre, et dépendances.
 """
 from datetime import date
 
@@ -41,14 +41,6 @@ class Command(BaseCommand):
         parser.add_argument(
             "--until", type=str, default=None,
             help="Date ISO (YYYY-MM-DD) de fin (incluse). Par défaut : aucune borne haute.",
-        )
-        parser.add_argument(
-            "--include-customers", action="store_true",
-            help="En purge partielle, supprime aussi les clients créés dans la fenêtre.",
-        )
-        parser.add_argument(
-            "--include-calls", action="store_true",
-            help="En purge partielle, supprime aussi les appels/anomalies créés dans la fenêtre.",
         )
         parser.add_argument(
             "--dry-run", action="store_true",
@@ -103,7 +95,7 @@ class Command(BaseCommand):
                 qs = qs.filter(**{f"{field}__date__lte": until})
             return qs
 
-        # Pré-calcul des querysets (hors transaction pour le dry-run).
+        # Pré-calcul des querysets.
         if partial:
             payments_qs = window(Payment.objects.all(), "created_at")
             payment_links_qs = window(PaymentLink.objects.all(), "created_at")
@@ -111,6 +103,9 @@ class Command(BaseCommand):
             bookings_qs = window(Booking.objects.all(), "created_at")
             cashbook_qs = window(CashbookEntry.objects.all(), "created_at")
             bank_qs = window(BankTransaction.objects.all(), "created_at")
+            calllogs_qs = window(CallLog.objects.all(), "created_at")
+            anomalies_qs = window(CallAnomaly.objects.all(), "created_at")
+            customers_qs = window(Customer.objects.all(), "created_at")
         else:
             payments_qs = Payment.objects.all()
             payment_links_qs = PaymentLink.objects.all()
@@ -118,6 +113,9 @@ class Command(BaseCommand):
             bookings_qs = Booking.objects.all()
             cashbook_qs = CashbookEntry.objects.all()
             bank_qs = BankTransaction.objects.all()
+            calllogs_qs = CallLog.objects.all()
+            anomalies_qs = CallAnomaly.objects.all()
+            customers_qs = Customer.objects.all()
 
         booking_ids = list(bookings_qs.values_list("id", flat=True))
         booking_events_qs = BookingEvent.objects.filter(booking_id__in=booking_ids)
@@ -125,15 +123,6 @@ class Command(BaseCommand):
         if not partial:
             booking_events_qs = BookingEvent.objects.all()
             booking_lines_qs = BookingLine.objects.all()
-
-        if partial:
-            calllogs_qs = window(CallLog.objects.all(), "created_at") if options["include_calls"] else CallLog.objects.none()
-            anomalies_qs = window(CallAnomaly.objects.all(), "created_at") if options["include_calls"] else CallAnomaly.objects.none()
-            customers_qs = window(Customer.objects.all(), "created_at") if options["include_customers"] else Customer.objects.none()
-        else:
-            calllogs_qs = CallLog.objects.all()
-            anomalies_qs = CallAnomaly.objects.all()
-            customers_qs = Customer.objects.all()
 
         if not partial:
             messages_qs = Message.objects.all()
@@ -157,9 +146,13 @@ class Command(BaseCommand):
             spareparts_qs = SparePart.objects.none()
             vehicles_qs = Vehicle.objects.none()
 
+        # Journaux d'audit.
         try:
             from audit.models import AuditLog
-            audit_qs = AuditLog.objects.all() if not partial else AuditLog.objects.none()
+            if partial:
+                audit_qs = window(AuditLog.objects.all(), "created_at")
+            else:
+                audit_qs = AuditLog.objects.all()
         except Exception:
             audit_qs = None
 
@@ -201,6 +194,7 @@ class Command(BaseCommand):
             "CallLog": calllogs_qs.count(),
             "CallAnomaly": anomalies_qs.count(),
             "Customer": customers_qs.count(),
+            "AuditLog": (audit_qs.count() if audit_qs is not None else 0),
             "Message": messages_qs.count(),
             "Notice": notices_qs.count(),
             "DailyClosing": daily_qs.count(),
@@ -250,13 +244,13 @@ class Command(BaseCommand):
 
             customers_qs.delete()
 
+            if audit_qs is not None:
+                audit_qs.delete()
+
             slots_qs.delete()
             maintenance_qs.delete()
             spareparts_qs.delete()
             vehicles_qs.delete()
-
-            if audit_qs is not None:
-                audit_qs.delete()
 
             if not partial:
                 InvoiceSequence.objects.all().delete()
