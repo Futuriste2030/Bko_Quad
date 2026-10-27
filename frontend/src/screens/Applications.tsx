@@ -17,7 +17,7 @@ interface Apk {
 const APKS: Apk[] = [
   {
     name: 'BKO Hub Standard',
-    file: 'bko-hub-standard-v1.0.apk',
+    file: 'bko-hub-standard-v2.0.apk',
     icon: 'quad',
     audience: 'Agents & guides',
     description: 'Ouvre le Hub BKO Quad en plein écran sur Android, comme une application.',
@@ -31,7 +31,7 @@ const APKS: Apk[] = [
   },
   {
     name: 'BKO Hub Collecteur',
-    file: 'bko-hub-collecteur-v1.0.apk',
+    file: 'bko-hub-collecteur-v2.0.apk',
     icon: 'phone',
     audience: 'Téléphone d’entreprise',
     description: 'Remonte le journal d’appels du téléphone et synchronise les appels en arrière-plan.',

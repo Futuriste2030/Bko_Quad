@@ -266,8 +266,12 @@ class Command(BaseCommand):
                 if ksite is not None:
                     from finance.models import CashbookEntry
                     updated = CashbookEntry.objects.filter(
+                        created_at__date__lt=since).update(site=ksite)
+                    # Même traitement pour les opérations bancaires antérieures sans site.
+                    from finance.models import BankTransaction
+                    updated_bank = BankTransaction.objects.filter(
                         site__isnull=True, created_at__date__lt=since).update(site=ksite)
-                    self.stdout.write(f"Écritures rattachées à {ksite.name} : {updated}")
+                    self.stdout.write(f"Écritures rattachées à {ksite.name} : {updated} caisse, {updated_bank} banque")
 
         self.stdout.write(self.style.SUCCESS(
             "Purge terminée."

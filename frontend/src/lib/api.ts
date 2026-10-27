@@ -878,49 +878,26 @@ export async function downloadExport(query: ExportQuery, format: ExportFormat): 
 
 /* Téléchargement PDF serveur (reçu, facture, rapport bancaire) : blob + nom. */
 export async function downloadPdf(url: string, filename: string): Promise<void> {
-  const native = (window as unknown as { BkoNative?: { downloadUrl?: (u: string, f: string, t: string) => void; saveFile?: (b: string, f: string, m: string) => void } }).BkoNative;
-  if (!native) alert('Pont natif absent (APK non à jour ?)');
-  const r = await fetch(`/api/v1${withSite(url)}`, { headers: authHeaders() });
-  if (r.status === 401) { logout(); throw new Error('Session expirée, reconnectez-vous.'); }
-  if (!r.ok) {
-    const err = await r.json().catch(() => ({}));
-    throw new Error(err.detail ?? 'Document indisponible.');
-  }
-  const blob = await r.blob();
-  /* APK WebView : téléchargement direct via le pont natif (plus fiable). */
   const token = localStorage.getItem('bko.access') ?? '';
-  if (native && typeof native.downloadUrl === 'function') {
-    native.downloadUrl(`/api/v1${withSite(url)}`, filename, token);
-    return;
-  }
-  if (native && typeof native.saveFile === 'function') {
-    const reader = new FileReader();
-    const base64 = await new Promise<string>((resolve, reject) => {
-      reader.onload = () => resolve(String(reader.result).split(',')[1] ?? '');
-      reader.onerror = () => reject(reader.error);
-      reader.readAsDataURL(blob);
-    });
-    native.saveFile(base64, filename, 'application/pdf');
-    return;
-  }
-  const file = new File([blob], filename, { type: 'application/pdf' });
-  /* Partage natif (iOS/Android) : plus fiable que l'attribut download. */
-  if (typeof navigator !== 'undefined' && typeof navigator.share === 'function'
-      && typeof navigator.canShare === 'function' && navigator.canShare({ files: [file] })) {
-    try {
-      await navigator.share({ files: [file], title: filename });
-      return;
-    } catch { /* annulation ou indisponible : repli sur l'ancre */ }
-  }
-  const blobUrl = URL.createObjectURL(blob);
+  const fullUrl = `/api/v1${withSite(url)}${withSite(url).includes('?') ? '&' : '?'}token=${encodeURIComponent(token)}`;
+  /* Repli direct : lien avec jeton, pour les WebViews ou fetch+blob ne fonctionne pas. */
   const link = document.createElement('a');
-  link.href = blobUrl;
+  link.href = fullUrl;
   link.download = filename;
   link.rel = 'noopener';
   document.body.appendChild(link); link.click(); link.remove();
-  /* Repli : ouvrir le PDF dans un nouvel onglet si le téléchargement ne démarre pas. */
-  try { window.open(blobUrl, '_blank', 'noopener'); } catch { /* ignore */ }
-  setTimeout(() => URL.revokeObjectURL(blobUrl), 10000);
+  /* Tentative via fetch+blob pour les navigateurs (partage natif, etc.). */
+  try {
+    const r = await fetch(`/api/v1${withSite(url)}`, { headers: authHeaders() });
+    if (r.status === 401) { logout(); throw new Error('Session expiree, reconnectez-vous.'); }
+    if (!r.ok) throw new Error('Document indisponible.');
+    const blob = await r.blob();
+    const file = new File([blob], filename, { type: 'application/pdf' });
+    if (typeof navigator !== 'undefined' && typeof navigator.share === 'function'
+        && typeof navigator.canShare === 'function' && navigator.canShare({ files: [file] })) {
+      try { await navigator.share({ files: [file], title: filename }); } catch { /* annulation */ }
+    }
+  } catch { /* repli sur le lien direct deja clique */ }
 }
 
 export interface TrackedLine { id: number; label: string; number: string; site: number | null; site_name: string; active: boolean; collect_enabled: boolean; last_sync: string | null }
