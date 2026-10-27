@@ -26,7 +26,7 @@ def make_setup(capacity=4, fleet=True):
     site = Site.objects.create(name="Bamako", city="Bamako")
     act = Activity.objects.create(
         site=site, name="Quad 1h", duration_minutes=60,
-        base_price=20000, deposit=10000, max_group=10,
+        base_price=25000, deposit=10000, max_group=10,
     )
     if fleet:
         add_fleet(site)
