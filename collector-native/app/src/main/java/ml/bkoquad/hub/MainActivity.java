@@ -7,6 +7,16 @@ import android.content.pm.PackageManager;
 import android.net.Uri;
 import android.os.Bundle;
 import android.os.PowerManager;
+import android.print.PrintAttributes;
+import android.print.PrintManager;
+import android.util.Base64;
+import android.content.ContentValues;
+import android.os.Build;
+import android.os.Environment;
+import android.provider.MediaStore;
+import java.io.File;
+import java.io.FileOutputStream;
+import java.io.OutputStream;
 import android.provider.Settings;
 import android.view.KeyEvent;
 import android.view.View;
@@ -258,6 +268,17 @@ public class MainActivity extends Activity {
         web.getSettings().setDomStorageEnabled(true);
         web.getSettings().setGeolocationEnabled(true);
         web.getSettings().setMediaPlaybackRequiresUserGesture(false);
+        web.getSettings().setSupportMultipleWindows(true);
+        // Téléchargements déclenchés par la PWA (PDF, exports).
+        web.setDownloadListener((url, userAgent, contentDisposition, mimetype, contentLength) -> {
+            try {
+                Intent i = new Intent(Intent.ACTION_VIEW, Uri.parse(url));
+                i.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+                startActivity(i);
+            } catch (Exception e) {
+                Toast.makeText(MainActivity.this, "Téléchargement impossible.", Toast.LENGTH_SHORT).show();
+            }
+        });
         web.setWebViewClient(new WebViewClient() {
             @Override
             public void onPageFinished(WebView view, String url) {
@@ -266,32 +287,7 @@ public class MainActivity extends Activity {
 
             @Override
             public boolean shouldOverrideUrlLoading(WebView view, String url) {
-                // Liens externes (WhatsApp, téléphone, e-mail, autres sites) :
-                // on les ouvre dans l'application dédiée plutôt que dans la WebView.
-                if (url == null) return false;
-                String lower = url.toLowerCase();
-                if (lower.startsWith("whatsapp:") || lower.startsWith("tel:") || lower.startsWith("mailto:")
-                        || lower.startsWith("sms:") || lower.contains("wa.me/") || lower.contains("api.whatsapp.com/")) {
-                    try {
-                        startActivity(new Intent(Intent.ACTION_VIEW, Uri.parse(url)));
-                    } catch (Exception e) {
-                        Toast.makeText(MainActivity.this, "Impossible d'ouvrir le lien.", Toast.LENGTH_SHORT).show();
-                    }
-                    return true;
-                }
-                // Liens http/https hors du Hub : navigateur externe.
-                if (lower.startsWith("http://") || lower.startsWith("https://")) {
-                    String hub = Prefs.hub(MainActivity.this);
-                    if (hub != null && !url.startsWith(hub)) {
-                        try {
-                            startActivity(new Intent(Intent.ACTION_VIEW, Uri.parse(url)));
-                        } catch (Exception e) {
-                            Toast.makeText(MainActivity.this, "Impossible d'ouvrir le lien.", Toast.LENGTH_SHORT).show();
-                        }
-                        return true;
-                    }
-                }
-                return false;
+                return handleExternalUrl(url);
             }
 
             @Override
@@ -305,6 +301,26 @@ public class MainActivity extends Activity {
         // Autorisations demandées par la PWA (onboarding, scanner QR) :
         // sans WebChromeClient, la WebView les refuse sans rien afficher.
         web.setWebChromeClient(new WebChromeClient() {
+            @Override
+            public boolean onCreateWindow(WebView view, boolean isDialog, boolean isUserGesture, Message resultMsg) {
+                // window.open(...) dans la PWA : on délége au handler d'URL externe
+                // plutôt que de créer une nouvelle WebView (qui serait invisible).
+                try {
+                    WebView.WebViewTransport transport = (WebView.WebViewTransport) resultMsg.obj;
+                    if (transport != null) {
+                        WebView newView = new WebView(MainActivity.this);
+                        newView.setWebViewClient(new WebViewClient() {
+                            @Override
+                            public boolean shouldOverrideUrlLoading(WebView v, String url) {
+                                return MainActivity.this.shouldOverrideUrlLoading(web, url);
+                            }
+                        });
+                        transport.setWebView(newView);
+                        resultMsg.sendToTarget();
+                    }
+                } catch (Exception ignored) {}
+                return true;
+            }
             @Override
             public void onPermissionRequest(PermissionRequest request) {
                 java.util.List<String> need = new java.util.ArrayList<>();
@@ -375,6 +391,78 @@ public class MainActivity extends Activity {
                 && checkSelfPermission("android.permission.POST_NOTIFICATIONS")
                 != PackageManager.PERMISSION_GRANTED) {
             requestPermissions(new String[]{"android.permission.POST_NOTIFICATIONS"}, REQ_NOTIF);
+        }
+    }
+
+    /** Ouvre les liens externes (WhatsApp, tel, mailto, autres sites) dans l'app dédiée. */
+    public boolean handleExternalUrl(String url) {
+        if (url == null) return false;
+        String lower = url.toLowerCase();
+        if (lower.startsWith("whatsapp:") || lower.startsWith("tel:") || lower.startsWith("mailto:")
+                || lower.startsWith("sms:") || lower.contains("wa.me/") || lower.contains("api.whatsapp.com/")) {
+            try {
+                startActivity(new Intent(Intent.ACTION_VIEW, Uri.parse(url)));
+            } catch (Exception e) {
+                Toast.makeText(MainActivity.this, "Impossible d'ouvrir le lien.", Toast.LENGTH_SHORT).show();
+            }
+            return true;
+        }
+        if (lower.startsWith("http://") || lower.startsWith("https://")) {
+            String hub = Prefs.hub(MainActivity.this);
+            if (hub != null && !url.startsWith(hub)) {
+                try {
+                    startActivity(new Intent(Intent.ACTION_VIEW, Uri.parse(url)));
+                } catch (Exception e) {
+                    Toast.makeText(MainActivity.this, "Impossible d'ouvrir le lien.", Toast.LENGTH_SHORT).show();
+                }
+                return true;
+            }
+        }
+        return false;
+    }
+
+    /** Impression de la page courante (via PrintManager). */
+    public void printPage() {
+        if (web == null) return;
+        try {
+            PrintManager pm = (PrintManager) getSystemService(PRINT_SERVICE);
+            android.print.PrintDocumentAdapter adapter = web.createPrintDocumentAdapter("BKO Hub");
+            pm.print("BKO Hub", adapter, new PrintAttributes.Builder().build());
+        } catch (Exception e) {
+            Toast.makeText(this, "Impression impossible : " + e.getMessage(), Toast.LENGTH_SHORT).show();
+        }
+    }
+
+    /** Enregistre un fichier (base64) dans les Téléchargements. */
+    public void saveFile(String base64, String filename, String mime) {
+        try {
+            byte[] data = Base64.decode(base64, Base64.DEFAULT);
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                ContentValues values = new ContentValues();
+                values.put(MediaStore.Downloads.DISPLAY_NAME, filename);
+                values.put(MediaStore.Downloads.MIME_TYPE, mime == null ? "application/octet-stream" : mime);
+                values.put(MediaStore.Downloads.IS_PENDING, 1);
+                Uri uri = getContentResolver().insert(MediaStore.Downloads.EXTERNAL_CONTENT_URI, values);
+                if (uri != null) {
+                    try (OutputStream os = getContentResolver().openOutputStream(uri)) {
+                        if (os != null) os.write(data);
+                    }
+                    values.clear();
+                    values.put(MediaStore.Downloads.IS_PENDING, 0);
+                    getContentResolver().update(uri, values, null, null);
+                    Toast.makeText(this, "Fichier enregistré : " + filename, Toast.LENGTH_SHORT).show();
+                }
+            } else {
+                File dir = Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS);
+                if (dir != null && !dir.exists()) dir.mkdirs();
+                File out = new File(dir, filename);
+                try (FileOutputStream fos = new FileOutputStream(out)) {
+                    fos.write(data);
+                }
+                Toast.makeText(this, "Fichier enregistré : " + filename, Toast.LENGTH_SHORT).show();
+            }
+        } catch (Exception e) {
+            Toast.makeText(this, "Enregistrement impossible : " + e.getMessage(), Toast.LENGTH_SHORT).show();
         }
     }
 

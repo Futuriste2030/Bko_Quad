@@ -885,6 +885,18 @@ export async function downloadPdf(url: string, filename: string): Promise<void> 
     throw new Error(err.detail ?? 'Document indisponible.');
   }
   const blob = await r.blob();
+  /* APK WebView : enregistrement via le pont natif (plus fiable que l'ancre). */
+  const native = (window as unknown as { BkoNative?: { saveFile?: (b: string, f: string, m: string) => void } }).BkoNative;
+  if (native && typeof native.saveFile === 'function') {
+    const reader = new FileReader();
+    const base64 = await new Promise<string>((resolve, reject) => {
+      reader.onload = () => resolve(String(reader.result).split(',')[1] ?? '');
+      reader.onerror = () => reject(reader.error);
+      reader.readAsDataURL(blob);
+    });
+    native.saveFile(base64, filename, 'application/pdf');
+    return;
+  }
   const file = new File([blob], filename, { type: 'application/pdf' });
   /* Partage natif (iOS/Android) : plus fiable que l'attribut download. */
   if (typeof navigator !== 'undefined' && typeof navigator.share === 'function'

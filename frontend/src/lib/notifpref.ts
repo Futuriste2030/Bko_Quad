@@ -39,6 +39,16 @@ export function currentPerm(): NotifPerm {
 interface NativeBridge {
   notify: (title: string, body: string, tag: string) => void;
   openExternal?: (url: string) => void;
+  printPage?: () => void;
+  saveFile?: (base64: string, filename: string, mime: string) => void;
+}
+
+export function nativePrint(): void {
+  const w = window as unknown as { BkoNative?: Partial<NativeBridge> };
+  if (w.BkoNative && typeof w.BkoNative.printPage === 'function') {
+    try { w.BkoNative.printPage!(); return; } catch { /* repli */ }
+  }
+  window.print();
 }
 
 function nativeBridge(): NativeBridge | null {

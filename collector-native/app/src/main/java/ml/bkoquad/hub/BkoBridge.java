@@ -34,4 +34,14 @@ public final class BkoBridge {
                     Toast.makeText(activity, "Impossible d'ouvrir le lien.", Toast.LENGTH_SHORT).show());
         }
     }
+
+    @JavascriptInterface
+    public void printPage() {
+        activity.printPage();
+    }
+
+    @JavascriptInterface
+    public void saveFile(String base64, String filename, String mime) {
+        activity.saveFile(base64, filename, mime);
+    }
 }

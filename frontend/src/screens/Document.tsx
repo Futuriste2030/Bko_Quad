@@ -15,6 +15,7 @@ import {
   type Activity, type Booking, type Customer, type Invoice, type Payment, type Site, type Slot, type Vehicle,
 } from '../lib/api';
 import { factureNumber, fcfa, fmtPhone, fmtSlot, norm, dureeLibelle } from '../lib/format';
+import { nativePrint } from '../lib/notifpref';
 import { mediaUrl } from '../lib/api';
 
 /* Reçu ET facture séparés (PRD R2) : contenu opposable, QR du talon,
@@ -170,7 +171,7 @@ export default function Document() {
           : 'Paiement à envoyer à la main au client (WhatsApp).'}
         actions={(
           <>
-            <button type="button" className="btn btn-ghost no-print" onClick={() => window.print()}><Icon name="file" size={18} />Imprimer</button>
+            <button type="button" className="btn btn-ghost no-print" onClick={() => nativePrint()}><Icon name="file" size={18} />Imprimer</button>
             {booking && <button type="button" className="btn btn-ghost no-print" onClick={download}><Icon name="download" size={18} />Télécharger</button>}
           </>
         )}

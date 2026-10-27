@@ -7,6 +7,7 @@ import Icon from '../lib/icons';
 import { listBookings, listEntries, monthSummary, downloadPdf, closeMonth, type Booking, type Entry, type MonthSummary } from '../lib/api';
 import { fcfa } from '../lib/format';
 import { useToast } from '../lib/toast';
+import { nativePrint } from '../lib/notifpref';
 import { useAuth } from '../lib/auth';
 
 /* Fiche de recette mensuelle : solde d'ouverture + entrées − sorties,
@@ -91,12 +92,16 @@ export default function Recette() {
         sub={`Fiche de recette de ${label}, à retirer en fin de mois.`}
         actions={(
           <>
-            <button type="button" className="btn btn-ghost no-print" onClick={() => window.print()}><Icon name="file" size={18} />Imprimer</button>
+            <button type="button" className="btn btn-ghost no-print" onClick={() => nativePrint()}><Icon name="file" size={18} />Imprimer</button>
             <button type="button" className="btn btn-ghost no-print" onClick={downloadRecettePdf} disabled={busy}><Icon name="download" size={18} />Télécharger en PDF</button>
-            {mayClose && !summary?.locked && (
-              <button type="button" className="btn btn-accent no-print" onClick={handleCloseMonth} disabled={busyClose}>
-                <Icon name="close" size={18} />Clôturer le mois
-              </button>
+            {mayClose && (
+              summary?.locked
+                ? <span className="small muted no-print">Mois déjà clôturé</span>
+                : (
+                  <button type="button" className="btn btn-accent no-print" onClick={handleCloseMonth} disabled={busyClose}>
+                    <Icon name="close" size={18} />Clôturer le mois
+                  </button>
+                )
             )}
           </>
         )}
