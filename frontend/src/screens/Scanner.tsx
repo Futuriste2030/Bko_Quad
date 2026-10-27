@@ -12,6 +12,7 @@ import {
 } from '../lib/api';
 import { fcfa, fmtSlot } from '../lib/format';
 import { parseScanned } from '../components/QrCode';
+import decodeQR from '@paulmillr/qr/decode.js';
 import { useSync } from '../lib/sync';
 import {
   clearRide, fmtCountdown, getRide, listRides, markAlerted, remainingMs,
@@ -27,9 +28,11 @@ export default function Scanner() {
   const { notify } = useToast();
   const [params] = useSearchParams();
   const videoRef = useRef<HTMLVideoElement>(null);
+  const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const streamRef = useRef<MediaStream | null>(null);
-  const [supported] = useState(() => typeof window !== 'undefined' && 'BarcodeDetector' in window
+  const [supported] = useState(() => typeof window !== 'undefined'
     && !!navigator.mediaDevices?.getUserMedia);
+  const hasBarcodeDetector = typeof window !== 'undefined' && 'BarcodeDetector' in window;
   /* Cause la plus fréquente sur téléphone : page ouverte en HTTP (réseau local),
      or la caméra exige un contexte sécurisé (HTTPS ou localhost). */
   const [insecure] = useState(() => typeof window !== 'undefined' && !window.isSecureContext);
@@ -197,11 +200,29 @@ export default function Scanner() {
       if (now - last > 600 && videoRef.current && videoRef.current.readyState >= 2 && !foundRef.current) {
   last = now;
         try {
-          // eslint-disable-next-line @typescript-eslint/no-explicit-any
-          const D = (window as any).BarcodeDetector;
-          const det = new D({ formats: ['qr_code'] });
-          const codes = await det.detect(videoRef.current);
-          if (codes.length > 0 && alive) { await lookup(String(codes[0].rawValue ?? '')); return; }
+          let raw: string | null = null;
+          if (hasBarcodeDetector) {
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            const D = (window as any).BarcodeDetector;
+            const det = new D({ formats: ['qr_code'] });
+            const codes = await det.detect(videoRef.current);
+            if (codes.length > 0) raw = String(codes[0].rawValue ?? '');
+          } else {
+            const v = videoRef.current;
+            const canvas = canvasRef.current ?? document.createElement('canvas');
+            if (!canvasRef.current) canvasRef.current = canvas;
+            const w = v.videoWidth || 640;
+            const h = v.videoHeight || 480;
+            canvas.width = w; canvas.height = h;
+            const ctx = canvas.getContext('2d');
+            if (ctx) {
+              ctx.drawImage(v, 0, 0, w, h);
+              const img = ctx.getImageData(0, 0, w, h);
+              try { raw = decodeQR({ width: w, height: h, data: img.data }) || null; }
+              catch { raw = null; }
+            }
+          }
+          if (raw && alive) { await lookup(raw); return; }
         } catch { /* image illisible : on réessaie */ }
       }
       requestAnimationFrame(tick);
