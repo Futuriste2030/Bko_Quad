@@ -11,7 +11,7 @@ import { useAuth } from '../lib/auth';
 import { useCompany } from '../lib/company';
 import { useToast } from '../lib/toast';
 import {
-  downloadPdf, listActivities, listBookings, listCustomers, listInvoices, listPayments, listSites, listSlots, listVehicles, logMessage, modifyBooking, setBookingVehicles,
+  cancelBookingLines, downloadPdf, listActivities, listBookings, listCustomers, listInvoices, listPayments, listSites, listSlots, listVehicles, logMessage, modifyBooking, refundBooking, setBookingVehicles,
   type Activity, type Booking, type Customer, type Invoice, type Payment, type Site, type Slot, type Vehicle,
 } from '../lib/api';
 import { factureNumber, fcfa, fmtPhone, fmtSlot, norm, dureeLibelle } from '../lib/format';
@@ -60,6 +60,8 @@ export default function Document() {
   const [modPersons, setModPersons] = useState('');
   const [modQuads, setModQuads] = useState('');
   const [modSource, setModSource] = useState('phone');
+  const [refundBusy, setRefundBusy] = useState(false);
+  const [refundDue, setRefundDue] = useState(0);
   const [customer, setCustomer] = useState<Customer | null>(null);
   const [activity, setActivity] = useState<Activity | null>(null);
   const [slot, setSlot] = useState<Slot | null>(null);
@@ -348,7 +350,56 @@ export default function Document() {
             </Link>
             <Link to={link("/factures")} className="btn btn-ghost">Retour aux factures</Link>
           </div>
-          <CompanyFooter showConditions={false} />
+         {booking && mayAssign && booking.status !== 'checked_in' && booking.status !== 'completed' && booking.status !== 'cancelled' && (
+        <section className="card" aria-label="Lignes de la réservation">
+          <h2>Lignes (quads)</h2>
+          <div className="list" style={{ marginTop: 8 }}>
+            {(booking.lines ?? []).map((ln) => (
+              <div className="row-card" key={ln.rank}>
+                <div className="row-top">
+                  <span className="row-title">Ligne {ln.rank}</span>
+                  <button type="button" className="btn btn-ghost btn-sm" disabled={(booking.lines?.length ?? 0) <= 1}
+                    onClick={async () => {
+                      setRefundBusy(true);
+                      try {
+                        const upd = await cancelBookingLines(booking.id, [ln.rank]);
+                        setBooking(upd as Booking);
+                        setRefundDue((upd as { refund_due?: number }).refund_due ?? 0);
+                        notify('success', 'Ligne annulée', `Ligne ${ln.rank} retirée.`);
+                      } catch (e) { notify('error', 'Annulation impossible', e instanceof Error ? e.message : ''); }
+                      finally { setRefundBusy(false); }
+                    }}>
+                    Retirer
+                  </button>
+                </div>
+                <div className="row-meta">
+                  <span>{ln.persons} pers.</span>
+                  <span>{ln.quads} quad(s)</span>
+                  <span className="num">{ln.line_total} FCFA</span>
+                </div>
+              </div>
+            ))}
+          </div>
+          {refundDue > 0 && (
+            <div className="btn-row" style={{ marginTop: 12 }}>
+              <button type="button" className="btn btn-accent" disabled={refundBusy}
+                onClick={async () => {
+                  setRefundBusy(true);
+                  try {
+                    const upd = await refundBooking(booking.id, refundDue, 'Annulation partielle');
+                    setBooking(upd as Booking);
+                    setRefundDue((upd as { refund_due?: number }).refund_due ?? 0);
+                    notify('success', 'Remboursement effectué', `${refundDue} FCFA retirés de la caisse.`);
+                  } catch (e) { notify('error', 'Remboursement impossible', e instanceof Error ? e.message : ''); }
+                  finally { setRefundBusy(false); }
+                }}>
+                {refundBusy && <span className="caret" aria-hidden="true" />}Retour de monnaie ({refundDue} FCFA)
+              </button>
+            </div>
+          )}
+        </section>
+      )}
+       <CompanyFooter showConditions={false} />
         </section>
       )}
       {modOpen && booking && (
