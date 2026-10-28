@@ -16,14 +16,41 @@ def month_bounds(day):
     return date(day.year, day.month, 1)
 
 
-def month_balance(day):
-    """Solde courant = ouverture + recettes − dépenses (jamais de saisie libre)."""
+def _site_id(site):
+    if site is None:
+        return None
+    return getattr(site, "id", site)
+
+
+def month_balance(day, site=None):
+    """Solde courant = ouverture + recettes − dépenses (jamais de saisie libre).
+
+    Par site : solde cumulé des écritures rattachées à ce site (rapport de
+    site), avec report automatique des mois précédents. Sans site : solde réel
+    de la caisse (ouverture reportée par clôture, sinon cumul historique).
+    """
     first = month_bounds(day)
-    try:
-        opening = MonthlyClosing.objects.get(month=first).opening
-    except MonthlyClosing.DoesNotExist:
-        opening = 0
-    agg = CashbookEntry.objects.filter(date__year=day.year, date__month=day.month).aggregate(
+    sid = _site_id(site)
+    base_qs = CashbookEntry.objects.all()
+    if sid is not None:
+        base_qs = base_qs.filter(site_id=sid)
+    if sid is None:
+        closing = MonthlyClosing.objects.filter(month=first).first()
+        if closing is not None:
+            opening = closing.opening
+        else:
+            prior = base_qs.filter(date__lt=first).aggregate(
+                inn=Sum("amount", filter=models_Q_in()),
+                out=Sum("amount", filter=models_Q_out()),
+            )
+            opening = (prior["inn"] or 0) - (prior["out"] or 0)
+    else:
+        prior = base_qs.filter(date__lt=first).aggregate(
+            inn=Sum("amount", filter=models_Q_in()),
+            out=Sum("amount", filter=models_Q_out()),
+        )
+        opening = (prior["inn"] or 0) - (prior["out"] or 0)
+    agg = base_qs.filter(date__year=day.year, date__month=day.month).aggregate(
         inn=Sum("amount", filter=models_Q_in()),
         out=Sum("amount", filter=models_Q_out()),
     )
@@ -62,10 +89,11 @@ def add_entry(*, day, category, label, direction, amount, created_by=None,
     with transaction.atomic():
         if MonthlyClosing.objects.filter(month=month_bounds(day)).exists():
             raise FinanceError("Mois clos : écriture impossible.")
-        if direction == CashbookEntry.OUT and month_balance(day) - amount < 0:
+        bal = month_balance(day, site=site)
+        if direction == CashbookEntry.OUT and bal - amount < 0:
             raise FinanceError(
                 f"Sortie refusée : solde de la caisse "
-                f"({month_balance(day)} FCFA) insuffisant pour "
+                f"({bal} FCFA) insuffisant pour "
                 f"{amount} FCFA. Enregistrez d'abord une recette "
                 f"(entrée) ou réduisez le montant.")
         entry = CashbookEntry.objects.create(

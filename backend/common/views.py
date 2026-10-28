@@ -1379,7 +1379,7 @@ class BankWriteView(APIView):
                    entity=f"bank_transaction:{tx.id}",
                    after=BankTransactionSerializer(tx).data)
         return Response({**BankTransactionSerializer(tx).data,
-                         "balance": bank_balance()}, status=201)
+                         "balance": bank_balance(site=site) if site is not None else bank_balance()}, status=201)
 
 
 class BankDepositView(BankWriteView):
