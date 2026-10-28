@@ -1578,38 +1578,68 @@ class RecettePdfView(APIView):
         from finance.models import CashbookEntry, MonthlyClosing
 
         today = timezone.localdate()
-        try:
-            year = int(request.query_params.get("year", today.year))
-            month = int(request.query_params.get("month", today.month))
-            first = date(year, month, 1)
-        except (ValueError, TypeError):
-            return Response({"detail": "Mois invalide."}, status=400)
         site = requested_site(request)
         site_name = Site.objects.filter(pk=site).values_list("name", flat=True).first() if site else None
         base = CashbookEntry.objects.all()
         if site is not None:
             base = base.filter(site_id=site)
-        entries = base.filter(date__year=year, date__month=month).order_by("date", "id")
-        closing = None
-        opening = 0
-        locked = False
-        if site is None:
-            closing = MonthlyClosing.objects.filter(month=first).first()
-            opening = closing.opening if closing else 0
-            locked = closing is not None
-        inn = sum(e.amount for e in entries if e.direction == CashbookEntry.IN)
-        out = sum(e.amount for e in entries if e.direction == CashbookEntry.OUT)
-        balance = (opening + inn - out) if site is None else (inn - out)
-        att_qs = Booking.objects.filter(status="pending_deposit",
-                                       expires_at__year=year,
-                                       expires_at__month=month)
-        if site is not None:
-            att_qs = att_qs.filter(slot__activity__site_id=site)
-        att = sum(b.deposit_due for b in att_qs)
-        filename, content = pdf_docs.pdf_recette_mensuelle(
-            year=year, month=month, site_name=site_name, entries=entries,
-            opening=opening, inn=inn, out=out, balance=balance,
-            locked=locked, att=att)
+
+        # Période : soit une liste de mois (months=YYYY-MM,YYYY-MM,...),
+        # soit un mois unique (year+month, rétro-compatible).
+        months_param = (request.query_params.get("months") or "").strip()
+        month_list = []
+        if months_param:
+            for part in months_param.split(","):
+                part = part.strip()
+                if not part:
+                    continue
+                try:
+                    y_s, m_s = part.split("-")
+                    month_list.append((int(y_s), int(m_s)))
+                except (ValueError, TypeError):
+                    return Response({"detail": "Mois invalide dans la liste."}, status=400)
+        else:
+            try:
+                year = int(request.query_params.get("year", today.year))
+                month = int(request.query_params.get("month", today.month))
+            except (ValueError, TypeError):
+                return Response({"detail": "Mois invalide."}, status=400)
+            month_list.append((year, month))
+
+        if not month_list:
+            return Response({"detail": "Aucun mois sélectionné."}, status=400)
+
+        months_data = []
+        for (y, m) in month_list:
+            first = date(y, m, 1)
+            entries = base.filter(date__year=y, date__month=m).order_by("date", "id")
+            # Ouverture = cumul des écritures antérieures (report automatique)
+            prior = base.filter(date__lt=first).aggregate(
+                inn=Sum("amount", filter=Q(direction=CashbookEntry.IN)),
+                out=Sum("amount", filter=Q(direction=CashbookEntry.OUT)),
+            )
+            opening = (prior["inn"] or 0) - (prior["out"] or 0)
+            inn = sum(e.amount for e in entries if e.direction == CashbookEntry.IN)
+            out = sum(e.amount for e in entries if e.direction == CashbookEntry.OUT)
+            balance = opening + inn - out
+            locked = False
+            if site is None:
+                closing = MonthlyClosing.objects.filter(month=first).first()
+                locked = closing is not None
+            att_qs = Booking.objects.filter(status="pending_deposit",
+                                           expires_at__year=y,
+                                           expires_at__month=m)
+            if site is not None:
+                att_qs = att_qs.filter(slot__activity__site_id=site)
+            att = sum(b.deposit_due for b in att_qs)
+            months_data.append({
+                "year": y, "month": m, "entries": entries,
+                "opening": opening, "inn": inn, "out": out,
+                "balance": balance, "locked": locked, "att": att,
+            })
+
+        filename, content = pdf_docs.pdf_recette_periode(
+            months_data=months_data, site_name=site_name)
         return FileResponse(io.BytesIO(content), as_attachment=True,
                             filename=filename, content_type="application/pdf")
 

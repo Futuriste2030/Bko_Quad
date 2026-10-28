@@ -12,6 +12,7 @@ import { useAuth } from '../lib/auth';
 
 /* Fiche de recette mensuelle : solde d'ouverture + entrées − sorties,
    recettes (mouvements) et dépenses, impayés attendus. Imprimable. */
+const MOIS_FR = ['janvier', 'février', 'mars', 'avril', 'mai', 'juin', 'juillet', 'août', 'septembre', 'octobre', 'novembre', 'décembre'];
 function monthKey(d: Date): string {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
 }
@@ -29,6 +30,9 @@ export default function Recette() {
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
   const [busyClose, setBusyClose] = useState(false);
+  const [exportYear, setExportYear] = useState(now.getFullYear());
+  const [exportMonths, setExportMonths] = useState<Set<number>>(new Set([now.getMonth() + 1]));
+  const [exportBusy, setExportBusy] = useState(false);
 
   useEffect(() => {
     const [y, m] = month.split('-').map(Number);
@@ -85,6 +89,41 @@ export default function Recette() {
     }
   }
 
+  function toggleExportMonth(m: number) {
+    setExportMonths((prev) => {
+      const next = new Set(prev);
+      if (next.has(m)) next.delete(m); else next.add(m);
+      return next;
+    });
+  }
+  function presetMonths(kind: 'single' | 'two' | 'quarter' | 'half' | 'year') {
+    const cur = new Date().getMonth() + 1;
+    const q = Math.ceil(cur / 3);
+    const start = cur;
+    let months: number[] = [];
+    if (kind === 'single') months = [cur];
+    else if (kind === 'two') months = [cur, cur === 12 ? 1 : cur + 1];
+    else if (kind === 'quarter') months = [q * 3 - 2, q * 3 - 1, q * 3];
+    else if (kind === 'half') {
+      for (let i = 0; i < 6; i++) months.push(((start - 1 + i) % 12) + 1);
+    } else {
+      months = Array.from({ length: 12 }, (_, i) => i + 1);
+    }
+    setExportMonths(new Set(months));
+  }
+  async function downloadPeriodPdf() {
+    const months = [...exportMonths].sort((a, b) => a - b);
+    if (months.length === 0) { notify('warning', 'Mois requis', 'Sélectionnez au moins un mois.'); return; }
+    const qs = months.map((m) => `${exportYear}-${String(m).padStart(2, '0')}`).join(',');
+    setExportBusy(true);
+    try {
+      await downloadPdf(`/finance/recette/pdf/?months=${encodeURIComponent(qs)}`,
+        `recette-${exportYear}${months.length > 1 ? '-periode' : ''}.pdf`);
+      notify('success', 'PDF téléchargé', 'Fiche de recette prête.');
+    } catch (e) { notify('error', 'Téléchargement impossible', e instanceof Error ? e.message : ''); }
+    finally { setExportBusy(false); }
+  }
+
   return (
     <AppShell>
       <PageHeader
@@ -112,6 +151,36 @@ export default function Recette() {
             <input id="rec-month" type="month" value={month} onChange={(e) => e.target.value && setMonth(e.target.value)} />
           </Field>
           <SiteFilter />
+        </div>
+      </div>
+      <div className="card form no-print">
+        <h3 style={{ marginTop: 0 }}>Export PDF — période</h3>
+        <div className="form-2">
+          <Field label="Année" htmlFor="exp-year">
+            <input id="exp-year" type="number" value={exportYear} onChange={(e) => setExportYear(Number(e.target.value) || now.getFullYear())} />
+          </Field>
+          <Field label="Préréglage" htmlFor="exp-preset">
+            <div className="segmented" role="group">
+              {(['single', 'two', 'quarter', 'half', 'year'] as const).map((p) => (
+                <button key={p} type="button" className="chip" onClick={() => presetMonths(p)}>
+                  {p === 'single' ? '1 mois' : p === 'two' ? '2 mois' : p === 'quarter' ? 'Trimestre' : p === 'half' ? 'Semestre' : 'Année'}
+                </button>
+              ))}
+            </div>
+          </Field>
+        </div>
+        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginTop: 8 }}>
+          {Array.from({ length: 12 }, (_, i) => i + 1).map((m) => (
+            <label key={m} style={{ display: 'inline-flex', alignItems: 'center', gap: 4, fontSize: 13 }}>
+              <input type="checkbox" checked={exportMonths.has(m)} onChange={() => toggleExportMonth(m)} />
+              {MOIS_FR[m - 1].slice(0, 3)}
+            </label>
+          ))}
+        </div>
+        <div className="modal-actions" style={{ marginTop: 12 }}>
+          <button type="button" className="btn btn-primary" onClick={downloadPeriodPdf} disabled={exportBusy || exportMonths.size === 0}>
+            {exportBusy && <span className="caret" aria-hidden="true" />}Télécharger PDF ({exportMonths.size} mois)
+          </button>
         </div>
       </div>
       {loading && <SkeletonList n={3} />}

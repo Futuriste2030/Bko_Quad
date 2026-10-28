@@ -719,3 +719,115 @@ def pdf_recette_mensuelle(*, year, month, site_name=None, entries=None,
     filename = "recette-mensuelle-" + f"{year}-{month:02d}" + \
         (f"-{code_part(site_name, 12)}" if site_name else "") + ".pdf"
     return filename, _render(title, flow)
+
+
+def pdf_recette_periode(*, months_data, site_name=None):
+    from reportlab.platypus import Paragraph, Spacer, Table, TableStyle, PageBreak
+    from reportlab.lib import colors
+    from reportlab.lib.colors import HexColor
+
+    from common.models import CompanyProfile
+    from finance.models import CashbookEntry
+
+    company, _ = CompanyProfile.objects.get_or_create(pk=1)
+    st = _styles()
+    scope = site_name or ""
+    if len(months_data) == 1:
+        md = months_data[0]
+        title = "FICHE DE RECETTE" + (" — " + scope if scope else "")
+        period_label = (_MOIS_FR[md["month"] - 1] + " " + str(md["year"])).capitalize()
+    else:
+        title = "FICHE DE RECETTE" + (" — " + scope if scope else "")
+        first_m = months_data[0]
+        last_m = months_data[-1]
+        period_label = (_MOIS_FR[first_m["month"] - 1] + " " + str(first_m["year"]) + " → " +
+                        _MOIS_FR[last_m["month"] - 1] + " " + str(last_m["year"])).capitalize()
+    flow = _header_flowables(
+        company, title,
+        "Période : " + period_label + " · Édité le " + bamako_date(datetime.now(BAMAKO))
+        + (" · " + scope if scope else " · Tout le réseau"))
+
+    total_inn = 0
+    total_out = 0
+    total_att = 0
+
+    def _entries_table(entries_list, heading):
+        flow.append(Paragraph(heading, st["h1"]))
+        flow.append(Spacer(1, 4))
+        if not entries_list:
+            flow.append(Paragraph("Aucune écriture sur la période.", st["small"]))
+            flow.append(Spacer(1, 8))
+            return
+        data = [["Date", "N°", "Libellé", "Montant"]]
+        for e in entries_list:
+            data.append([
+                bamako_date(e.date), e.voucher or "—", e.label or "—",
+                fcfa(e.amount),
+            ])
+        t = Table(data, repeatRows=1, colWidths=[70, 95, 285, 80])
+        t.setStyle(TableStyle([
+            ("FONTNAME", (0, 0), (-1, 0), "Helvetica-Bold"),
+            ("FONTSIZE", (0, 0), (-1, -1), 8.5),
+            ("BACKGROUND", (0, 0), (-1, 0), HexColor(DARK)),
+            ("TEXTCOLOR", (0, 0), (-1, 0), colors.white),
+            ("ROWBACKGROUNDS", (0, 1), (-1, -1), [colors.white, HexColor(LIGHT)]),
+            ("LINEBELOW", (0, 0), (-1, 0), 1.5, HexColor(ACCENT)),
+            ("LINEBELOW", (0, 1), (-1, -1), 0.4, HexColor("#b5b0a6")),
+            ("ALIGN", (3, 0), (3, -1), "RIGHT"),
+            ("VALIGN", (0, 0), (-1, -1), "TOP"),
+            ("TOPPADDING", (0, 0), (-1, -1), 3),
+            ("BOTTOMPADDING", (0, 0), (-1, -1), 3),
+            ("LEFTPADDING", (0, 0), (-1, -1), 4),
+            ("RIGHTPADDING", (0, 0), (-1, -1), 4),
+            ("BOX", (0, 0), (-1, -1), 1.2, HexColor(DARK)),
+        ]))
+        flow.append(t)
+        flow.append(Spacer(1, 8))
+
+    for idx, md in enumerate(months_data):
+        if idx > 0:
+            flow.append(PageBreak())
+        label = (_MOIS_FR[md["month"] - 1] + " " + str(md["year"])).capitalize()
+        flow.append(Paragraph(label, st["h1"]))
+        flow.append(Spacer(1, 6))
+        entries = list(md["entries"] or [])
+        inn_entries = [e for e in entries if e.direction == CashbookEntry.IN]
+        out_entries = [e for e in entries if e.direction == CashbookEntry.OUT]
+        rows = [
+            ("Ouverture (report du mois précédent)", fcfa(md["opening"])),
+            ("Recettes (mouvements) — " + str(len(inn_entries)) + " écriture(s)", fcfa(md["inn"])),
+            ("Dépenses — " + str(len(out_entries)) + " écriture(s)", fcfa(md["out"])),
+            ("Solde", fcfa(md["balance"])),
+        ]
+        if md.get("locked"):
+            rows.append(("Statut", "Mois clôturé (verrouillé)"))
+        else:
+            rows.append(("Impayés attendus (dépôts)", fcfa(md["att"])))
+        flow.append(_section_table(st, "SYNTHÈSE", rows, total_last=True))
+        flow.append(Spacer(1, 10))
+        _entries_table(inn_entries, "Recettes")
+        _entries_table(out_entries, "Dépenses")
+
+        total_inn += md["inn"]
+        total_out += md["out"]
+        total_att += md["att"]
+
+    if len(months_data) > 1:
+        flow.append(PageBreak())
+        flow.append(Paragraph("TOTAL PÉRIODE", st["h1"]))
+        flow.append(Spacer(1, 6))
+        rows = [
+            ("Recettes totales", fcfa(total_inn)),
+            ("Dépenses totales", fcfa(total_out)),
+            ("Solde final", fcfa(months_data[-1]["balance"])),
+            ("Impayés attendus (dépôts)", fcfa(total_att)),
+        ]
+        flow.append(_section_table(st, "SYNTHÈSE GLOBALE", rows, total_last=True))
+
+    first_m = months_data[0]
+    last_m = months_data[-1]
+    if len(months_data) == 1:
+        filename = "recette-mensuelle-" + str(first_m["year"]) + "-" + "{:02d}".format(first_m["month"]) + ("-" + code_part(site_name, 12) if site_name else "") + ".pdf"
+    else:
+        filename = "recette-periode-" + str(first_m["year"]) + "{:02d}".format(first_m["month"]) + "-" + str(last_m["year"]) + "{:02d}".format(last_m["month"]) + ("-" + code_part(site_name, 12) if site_name else "") + ".pdf"
+    return filename, _render(title, flow)
