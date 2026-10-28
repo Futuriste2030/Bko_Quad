@@ -1282,19 +1282,27 @@ class MonthSummaryView(APIView):
         site = requested_site(self.request)
         if site is not None:
             base = CashbookEntry.objects.filter(site_id=site)
-            opening, balance, locked = 0, None, False
+            prior = base.filter(date__lt=first).aggregate(
+                inn=Sum("amount", filter=Q(direction=CashbookEntry.IN)),
+                out=Sum("amount", filter=Q(direction=CashbookEntry.OUT)),
+            )
+            opening = (prior["inn"] or 0) - (prior["out"] or 0)
+            locked = False
         else:
             base = CashbookEntry.objects.all()
-            opening = closing.opening if closing else 0
-            balance, locked = month_balance(date(year, month, 28)), closing is not None
+            prior = base.filter(date__lt=first).aggregate(
+                inn=Sum("amount", filter=Q(direction=CashbookEntry.IN)),
+                out=Sum("amount", filter=Q(direction=CashbookEntry.OUT)),
+            )
+            opening = (prior["inn"] or 0) - (prior["out"] or 0)
+            locked = closing is not None
         inn = base.filter(
             date__year=year, date__month=month, direction=CashbookEntry.IN
         ).aggregate(s=Sum("amount"))["s"] or 0
         out = base.filter(
             date__year=year, date__month=month, direction=CashbookEntry.OUT
         ).aggregate(s=Sum("amount"))["s"] or 0
-        if site is not None:
-            balance = inn - out
+        balance = opening + inn - out
         site_name = Site.objects.filter(pk=site).values_list("name", flat=True).first() if site else ""
         return Response({
             "month": first.isoformat(),

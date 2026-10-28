@@ -34,22 +34,14 @@ def month_balance(day, site=None):
     base_qs = CashbookEntry.objects.all()
     if sid is not None:
         base_qs = base_qs.filter(site_id=sid)
-    if sid is None:
-        closing = MonthlyClosing.objects.filter(month=first).first()
-        if closing is not None:
-            opening = closing.opening
-        else:
-            prior = base_qs.filter(date__lt=first).aggregate(
-                inn=Sum("amount", filter=models_Q_in()),
-                out=Sum("amount", filter=models_Q_out()),
-            )
-            opening = (prior["inn"] or 0) - (prior["out"] or 0)
-    else:
-        prior = base_qs.filter(date__lt=first).aggregate(
-            inn=Sum("amount", filter=models_Q_in()),
-            out=Sum("amount", filter=models_Q_out()),
-        )
-        opening = (prior["inn"] or 0) - (prior["out"] or 0)
+    # Report automatique : l'ouverture est toujours le cumul des écritures
+    # antérieures (indépendamment des clôtures), pour ne jamais perdre un
+    # solde non utilisé d'un mois précédent.
+    prior = base_qs.filter(date__lt=first).aggregate(
+        inn=Sum("amount", filter=models_Q_in()),
+        out=Sum("amount", filter=models_Q_out()),
+    )
+    opening = (prior["inn"] or 0) - (prior["out"] or 0)
     agg = base_qs.filter(date__year=day.year, date__month=day.month).aggregate(
         inn=Sum("amount", filter=models_Q_in()),
         out=Sum("amount", filter=models_Q_out()),
@@ -145,14 +137,11 @@ def record_payment_entry(payment):
 def close_month(year, month):
     first = date(year, month, 1)
     with transaction.atomic():
-        opening = 0
-        prev = MonthlyClosing.objects.filter(month__lt=first).order_by("-month").first()
-        if prev:
-            opening = prev.closing
-        else:
-            old = MonthlyClosing.objects.filter(month=first).first()
-            if old:
-                opening = old.opening
+        prior = CashbookEntry.objects.filter(date__lt=first).aggregate(
+            inn=Sum("amount", filter=models_Q_in()),
+            out=Sum("amount", filter=models_Q_out()),
+        )
+        opening = (prior["inn"] or 0) - (prior["out"] or 0)
         agg = CashbookEntry.objects.filter(date__year=year, date__month=month).aggregate(
             inn=Sum("amount", filter=models_Q_in()),
             out=Sum("amount", filter=models_Q_out()),
