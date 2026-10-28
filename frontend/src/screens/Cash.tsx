@@ -84,7 +84,7 @@ export default function Cash() {
   const out = rows.filter((e) => e.direction === 'out').reduce((s, e) => s + e.amount, 0);
 
   /* Ancienne recette (hors Hub) : date passée autorisée, bordereau auto du mois saisi. */
-  async function submitReceipt() {
+  async function submitReceipt(keepOpen = false) {
   if (!rLabel.trim()) { notify('warning', 'Libellé requis', 'Décrivez la recette (ex. espèces septembre).'); return; }
     const n = Math.round(Number(rAmount));
     if (!n || n < 1) { notify('warning', 'Montant invalide', 'Saisissez le montant en FCFA.'); return; }
@@ -99,7 +99,11 @@ export default function Cash() {
       });
       if (e.queued) notify('warning', 'Recette consignée hors ligne', `${fcfa(n)} — écriture en attente de synchronisation.`);
       else notify('success', 'Recette enregistrée', `${e.voucher} — ${fcfa(n)}.`);
-      setOpen(false); setRLabel(''); setRAmount(''); setRSite(''); setRReceipt('');
+      if (keepOpen) {
+        setRLabel(''); setRAmount(''); setRReceipt('');
+      } else {
+        setOpen(false); setRLabel(''); setRAmount(''); setRSite(''); setRReceipt('');
+      }
       load();
     } catch (e) { notify('error', 'Enregistrement impossible', e instanceof Error ? e.message : ''); }
     finally { setBusy(false); }
@@ -205,7 +209,10 @@ export default function Cash() {
             </div>
             <div className="modal-actions">
               <button type="button" className="btn btn-ghost" onClick={() => setOpen(false)} disabled={busy}>Revenir</button>
-              <button type="button" className="btn btn-primary" onClick={submitReceipt} disabled={busy}>
+              <button type="button" className="btn btn-ghost" onClick={() => submitReceipt(true)} disabled={busy}>
+                {busy && <span className="caret" aria-hidden="true" />}Enregistrer et ajouter
+              </button>
+              <button type="button" className="btn btn-primary" onClick={() => submitReceipt(false)} disabled={busy}>
                 {busy && <span className="caret" aria-hidden="true" />}Enregistrer la recette
               </button>
             </div>

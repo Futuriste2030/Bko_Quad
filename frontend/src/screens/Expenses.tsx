@@ -53,7 +53,7 @@ export default function Expenses() {
   const out = items.filter((e) => e.direction === 'out').reduce((s, e) => s + e.amount, 0);
   const outCount = items.filter((e) => e.direction === 'out').length;
 
-  async function submit() {
+  async function submit(keepOpen = false) {
     const n = Number(amount);
     if (!label.trim()) { notify('warning', 'Libellé requis', 'Décrivez la dépense en une phrase.'); return; }
     if (!n || n < 1) { notify('warning', 'Montant invalide', 'Saisissez le montant en FCFA.'); return; }
@@ -62,7 +62,11 @@ export default function Expenses() {
       const e = await createExpense({ day, direction, category, label: label.trim(), amount: Math.round(n), site: site ? Number(site) : undefined });
       if (e.queued) notify('warning', 'Écriture consignée hors ligne', `${fcfa(e.amount)} — en attente de synchronisation.`);
       else notify('success', 'Écriture enregistrée', `Bordereau ${e.voucher} — ${fcfa(e.amount)}.`);
-      setOpen(false); setLabel(''); setAmount('');
+      if (keepOpen) {
+        setLabel(''); setAmount(''); setCategory('carburant');
+      } else {
+        setOpen(false); setLabel(''); setAmount(''); setCategory('carburant');
+      }
       load();
     } catch (e) { notify('error', 'Enregistrement impossible', e instanceof Error ? e.message : ''); }
     finally { setBusy(false); }
@@ -150,7 +154,10 @@ export default function Expenses() {
             <Field label="Montant (FCFA)" required htmlFor="ex-amount"><input id="ex-amount" inputMode="numeric" value={amount} onChange={(e) => setAmount(e.target.value)} placeholder="Ex. 15000" /></Field>
             <div className="modal-actions">
               <button type="button" className="btn btn-ghost" onClick={() => setOpen(false)} disabled={busy}>Revenir</button>
-              <button type="button" className="btn btn-primary" onClick={submit} disabled={busy}>
+              <button type="button" className="btn btn-ghost" onClick={() => submit(true)} disabled={busy}>
+                {busy && <span className="caret" aria-hidden="true" />}Enregistrer et ajouter
+              </button>
+              <button type="button" className="btn btn-primary" onClick={() => submit(false)} disabled={busy}>
                 {busy && <span className="caret" aria-hidden="true" />}Enregistrer
               </button>
             </div>
