@@ -86,6 +86,24 @@ def add_entry(*, day, category, label, direction, amount, created_by=None,
         raise FinanceError("Montant invalide.")
     if direction not in (CashbookEntry.IN, CashbookEntry.OUT):
         raise FinanceError("Sens invalide.")
+    # Anti-doublon : même catégorie, libellé, montant et mois (et site)
+    # ne peuvent être enregistrés deux fois (évite les doubles clics).
+    from django.db.models import Q
+    dup_qs = CashbookEntry.objects.filter(
+        date__year=day.year, date__month=day.month,
+        category=category, label=label, amount=amount,
+        direction=direction,
+    )
+    sid = _site_id(site)
+    if sid is not None:
+        dup_qs = dup_qs.filter(site_id=sid)
+    else:
+        dup_qs = dup_qs.filter(site__isnull=True)
+    if dup_qs.exists():
+        raise FinanceError(
+            "Écriture déjà enregistrée pour ce mois "
+            "(même catégorie, libellé et montant). Vérifiez la Caisse "
+            "ou modifiez l'écriture existante.")
     with transaction.atomic():
         if MonthlyClosing.objects.filter(month=month_bounds(day)).exists():
             raise FinanceError("Mois clos : écriture impossible.")
