@@ -57,6 +57,7 @@ export default function Recette() {
     .reduce((s, b) => s + b.deposit_due, 0), [bookings, month]);
 
   const label = new Date(`${month}-02`).toLocaleDateString('fr-FR', { month: 'long', year: 'numeric' });
+  const labelCap = label.charAt(0).toUpperCase() + label.slice(1);
   const empty = inMonth.length === 0 && att === 0;
 
   async function downloadRecettePdf() {
@@ -128,7 +129,7 @@ export default function Recette() {
     <AppShell>
       <PageHeader
         title="Recette mensuelle"
-        sub={`Fiche de recette de ${label}, à retirer en fin de mois.`}
+        sub={`Fiche de recette de ${labelCap}, à retirer en fin de mois.`}
         actions={(
           <>
             <button type="button" className="btn btn-ghost no-print" onClick={() => nativePrint()}><Icon name="file" size={18} />Imprimer</button>
@@ -170,12 +171,30 @@ export default function Recette() {
           </Field>
         </div>
         <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginTop: 8 }}>
-          {Array.from({ length: 12 }, (_, i) => i + 1).map((m) => (
-            <label key={m} style={{ display: 'inline-flex', alignItems: 'center', gap: 4, fontSize: 13 }}>
-              <input type="checkbox" checked={exportMonths.has(m)} onChange={() => toggleExportMonth(m)} />
-              {MOIS_FR[m - 1].slice(0, 3)}
-            </label>
-          ))}
+          {Array.from({ length: 12 }, (_, i) => i + 1).map((m) => {
+            const on = exportMonths.has(m);
+            const name = MOIS_FR[m - 1];
+            return (
+              <button
+                key={m}
+                type="button"
+                onClick={() => toggleExportMonth(m)}
+                style={{
+                  padding: '6px 10px',
+                  borderRadius: 999,
+                  border: '1px solid var(--border-strong, #ccc)',
+                  background: on ? 'var(--accent, #2563eb)' : 'transparent',
+                  color: on ? '#fff' : 'inherit',
+                  cursor: 'pointer',
+                  fontSize: 13,
+                  textTransform: 'capitalize',
+                  fontWeight: on ? 600 : 400,
+                }}
+              >
+                {name.slice(0, 3)}
+              </button>
+            );
+          })}
         </div>
         <div className="modal-actions" style={{ marginTop: 12 }}>
           <button type="button" className="btn btn-primary" onClick={downloadPeriodPdf} disabled={exportBusy || exportMonths.size === 0}>
@@ -197,7 +216,7 @@ export default function Recette() {
             <div className="kpi"><span className="kpi-top">Solde</span><span className="kpi-value num">{fcfa(summary?.balance ?? (sumIn - sumOut))}</span><span className="kpi-sub">{summary?.locked ? 'Mois clôturé (verrouillé)' : `Attendus : ${fcfa(att)}`}</span></div>
           </div>
           <section className="card">
-            <CompanyHeader title={`Fiche de recette — ${label}`} sub={summary?.locked ? 'Mois clôturé.' : 'Mois en cours.'} />
+            <CompanyHeader title={`Fiche de recette — ${labelCap}`} sub={summary?.locked ? 'Mois clôturé.' : 'Mois en cours.'} />
             <h3 style={{ marginTop: 12 }}>Recettes</h3>
             <div className="list" style={{ marginTop: 8 }}>
               {inn.map((e) => (
