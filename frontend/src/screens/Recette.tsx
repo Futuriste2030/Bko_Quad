@@ -13,16 +13,14 @@ import { useAuth } from '../lib/auth';
 /* Fiche de recette mensuelle : solde d'ouverture + entrées − sorties,
    recettes (mouvements) et dépenses, impayés attendus. Imprimable. */
 const MOIS_FR = ['janvier', 'février', 'mars', 'avril', 'mai', 'juin', 'juillet', 'août', 'septembre', 'octobre', 'novembre', 'décembre'];
-function monthKey(d: Date): string {
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
-}
 
 export default function Recette() {
   const now = new Date();
   const { notify } = useToast();
   const { role } = useAuth();
   const mayClose = role === 'responsable' || role === 'admin' || role === 'comptable' || role === 'superadmin';
-  const [month, setMonth] = useState(monthKey(now));
+  const [viewYear, setViewYear] = useState(now.getFullYear());
+  const [viewMonths, setViewMonths] = useState<Set<number>>(new Set([now.getMonth() + 1]));
   const [entries, setEntries] = useState<Entry[]>([]);
   const [bookings, setBookings] = useState<Booking[]>([]);
   const [summary, setSummary] = useState<MonthSummary | null>(null);
@@ -30,42 +28,52 @@ export default function Recette() {
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
   const [busyClose, setBusyClose] = useState(false);
-  const [exportYear, setExportYear] = useState(now.getFullYear());
-  const [exportMonths, setExportMonths] = useState<Set<number>>(new Set([now.getMonth() + 1]));
   const [exportBusy, setExportBusy] = useState(false);
 
   useEffect(() => {
-    const [y, m] = month.split('-').map(Number);
+    const months = [...viewMonths].sort((a, b) => a - b);
+    const first = months[0] || (now.getMonth() + 1);
     setLoading(true); setError('');
     Promise.all([
       listEntries().catch(() => [] as Entry[]),
       listBookings().catch(() => [] as Booking[]),
-      monthSummary(y, m).catch(() => null),
+      monthSummary(viewYear, first).catch(() => null),
     ])
       .then(([e, b, s]) => { setEntries(e); setBookings(b); setSummary(s); })
       .catch((e: Error) => setError(e.message))
       .finally(() => setLoading(false));
-  }, [month]);
+  }, [viewYear, viewMonths]);
 
-  const inMonth = useMemo(() => entries.filter((e) => e.date.slice(0, 7) === month), [entries, month]);
+  const selectedMonths = [...viewMonths].sort((a, b) => a - b);
+  const inMonth = useMemo(() => entries.filter((e) => {
+    const d = new Date(e.date);
+    return d.getFullYear() === viewYear && viewMonths.has(d.getMonth() + 1);
+  }), [entries, viewYear, viewMonths]);
   const inn = inMonth.filter((e) => e.direction === 'in');
   const out = inMonth.filter((e) => e.direction === 'out');
   const sumIn = inn.reduce((s, e) => s + e.amount, 0);
   const sumOut = out.reduce((s, e) => s + e.amount, 0);
   const att = useMemo(() => bookings
-    .filter((b) => b.status === 'pending_deposit' && monthKey(new Date(b.expires_at)) === month)
-    .reduce((s, b) => s + b.deposit_due, 0), [bookings, month]);
+    .filter((b) => b.status === 'pending_deposit' && new Date(b.expires_at).getFullYear() === viewYear && viewMonths.has(new Date(b.expires_at).getMonth() + 1))
+    .reduce((s, b) => s + b.deposit_due, 0), [bookings, viewYear, viewMonths]);
 
-  const label = new Date(`${month}-02`).toLocaleDateString('fr-FR', { month: 'long', year: 'numeric' });
-  const labelCap = label.charAt(0).toUpperCase() + label.slice(1);
+  const periodLabel = selectedMonths.length === 1
+    ? MOIS_FR[selectedMonths[0] - 1].charAt(0).toUpperCase() + MOIS_FR[selectedMonths[0] - 1].slice(1) + ' ' + viewYear
+    : (selectedMonths.length === 12 ? 'Année ' + viewYear : selectedMonths.length + ' mois — ' + viewYear);
+  const labelCap = periodLabel;
   const empty = inMonth.length === 0 && att === 0;
 
   async function downloadRecettePdf() {
-    const [y, m] = month.split('-').map(Number);
+    const months = [...viewMonths].sort((a, b) => a - b);
+    if (months.length === 0) { notify('warning', 'Mois requis', 'Sélectionnez au moins un mois.'); return; }
+    const qs = months.map((m) => `${viewYear}-${String(m).padStart(2, '0')}`).join(',');
     setBusy(true);
     try {
-      await downloadPdf(`/finance/recette/pdf/?year=${y}&month=${m}`,
-        `recette-mensuelle-${month}.pdf`);
+      const nameLabel = months.length === 1
+        ? (MOIS_FR[months[0] - 1].charAt(0).toUpperCase() + MOIS_FR[months[0] - 1].slice(1))
+        : (months.length === 12 ? 'Annee' : months.length + 'mois');
+      await downloadPdf(`/finance/recette/pdf/?months=${encodeURIComponent(qs)}`,
+        `Recette_mensuelle_${nameLabel}_${viewYear}.pdf`);
       notify('success', 'PDF téléchargé', 'Fiche de recette prête à envoyer.');
     } catch (e) {
       notify('error', 'Téléchargement impossible', e instanceof Error ? e.message : '');
@@ -75,8 +83,10 @@ export default function Recette() {
   }
 
   async function handleCloseMonth() {
-    const [y, m] = month.split('-').map(Number);
-    if (!window.confirm(`Clôturer le mois ${month} ? Les écritures seront verrouillées et le solde reporté.`)) return;
+    const months = [...viewMonths].sort((a, b) => a - b);
+    const y = viewYear; const m = months[0] || (now.getMonth() + 1);
+    if (viewMonths.size !== 1) { notify('warning', 'Clôture', 'Sélectionnez un seul mois pour clôturer.'); return; }
+    if (!window.confirm(`Clôturer le mois ${y}-${String(m).padStart(2, '0')} ? Les écritures seront verrouillées et le solde reporté.`)) return;
     setBusyClose(true);
     try {
       await closeMonth(y, m);
@@ -91,7 +101,7 @@ export default function Recette() {
   }
 
   function toggleExportMonth(m: number) {
-    setExportMonths((prev) => {
+    setViewMonths((prev) => {
       const next = new Set(prev);
       if (next.has(m)) next.delete(m); else next.add(m);
       return next;
@@ -110,16 +120,19 @@ export default function Recette() {
     } else {
       months = Array.from({ length: 12 }, (_, i) => i + 1);
     }
-    setExportMonths(new Set(months));
+    setViewMonths(new Set(months));
   }
   async function downloadPeriodPdf() {
-    const months = [...exportMonths].sort((a, b) => a - b);
+    const months = [...viewMonths].sort((a, b) => a - b);
     if (months.length === 0) { notify('warning', 'Mois requis', 'Sélectionnez au moins un mois.'); return; }
-    const qs = months.map((m) => `${exportYear}-${String(m).padStart(2, '0')}`).join(',');
+    const qs = months.map((m) => `${viewYear}-${String(m).padStart(2, '0')}`).join(',');
     setExportBusy(true);
     try {
+      const nameLabel = months.length === 1
+        ? (MOIS_FR[months[0] - 1].charAt(0).toUpperCase() + MOIS_FR[months[0] - 1].slice(1))
+        : (months.length === 12 ? 'Annee' : months.length + 'mois');
       await downloadPdf(`/finance/recette/pdf/?months=${encodeURIComponent(qs)}`,
-        `recette-${exportYear}${months.length > 1 ? '-periode' : ''}.pdf`);
+        `Recette_mensuelle_${nameLabel}_${viewYear}.pdf`);
       notify('success', 'PDF téléchargé', 'Fiche de recette prête.');
     } catch (e) { notify('error', 'Téléchargement impossible', e instanceof Error ? e.message : ''); }
     finally { setExportBusy(false); }
@@ -149,7 +162,11 @@ export default function Recette() {
       <div className="card form no-print">
         <div className="form-2">
           <Field label="Mois" htmlFor="rec-month">
-            <input id="rec-month" type="month" value={month} onChange={(e) => e.target.value && setMonth(e.target.value)} />
+            <input id="rec-month" type="month" value={`${viewYear}-${String([...viewMonths][0] || 1).padStart(2, '0')}`} onChange={(e) => {
+              if (!e.target.value) return;
+              const [y, m] = e.target.value.split('-').map(Number);
+              setViewYear(y); setViewMonths(new Set([m]));
+            }} />
           </Field>
           <SiteFilter />
         </div>
@@ -158,7 +175,7 @@ export default function Recette() {
         <h3 style={{ marginTop: 0 }}>Export PDF — période</h3>
         <div className="form-2">
           <Field label="Année" htmlFor="exp-year">
-            <input id="exp-year" type="number" value={exportYear} onChange={(e) => setExportYear(Number(e.target.value) || now.getFullYear())} />
+            <input id="exp-year" type="number" value={viewYear} onChange={(e) => setViewYear(Number(e.target.value) || now.getFullYear())} />
           </Field>
           <Field label="Préréglage" htmlFor="exp-preset">
             <div className="segmented" role="group">
@@ -172,7 +189,7 @@ export default function Recette() {
         </div>
         <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginTop: 8 }}>
           {Array.from({ length: 12 }, (_, i) => i + 1).map((m) => {
-            const on = exportMonths.has(m);
+            const on = viewMonths.has(m);
             const name = MOIS_FR[m - 1];
             return (
               <button
@@ -197,8 +214,8 @@ export default function Recette() {
           })}
         </div>
         <div className="modal-actions" style={{ marginTop: 12 }}>
-          <button type="button" className="btn btn-primary" onClick={downloadPeriodPdf} disabled={exportBusy || exportMonths.size === 0}>
-            {exportBusy && <span className="caret" aria-hidden="true" />}Télécharger PDF ({exportMonths.size} mois)
+          <button type="button" className="btn btn-primary" onClick={downloadPeriodPdf} disabled={exportBusy || viewMonths.size === 0}>
+            {exportBusy && <span className="caret" aria-hidden="true" />}Télécharger PDF ({viewMonths.size} mois)
           </button>
         </div>
       </div>
