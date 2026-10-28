@@ -436,8 +436,8 @@ table.table { width: 100%; border-collapse: collapse; font-size: var(--text-base
 }
 .modal h2 { margin: 0 0 4px; font-size: var(--text-xl); }
 .modal p { color: var(--ink-muted); }
-.modal-actions { display: flex; gap: 8px; margin-top: 16px; }
-.modal-actions .btn { flex: 1; }
+.modal-actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 16px; }
+.modal-actions .btn { flex: 1 1 120px; min-width: 0; }
 
 /* Menu profil */
 .menu {
