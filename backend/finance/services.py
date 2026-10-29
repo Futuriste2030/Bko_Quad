@@ -22,6 +22,21 @@ def _site_id(site):
     return getattr(site, "id", site)
 
 
+def total_balance(site=None):
+    """Solde global (toutes dates confondues) pour le site donné (ou la caisse
+    entière). Permet d'enregistrer des écritures antidatées couvertes par le
+    solde actuel."""
+    sid = _site_id(site)
+    qs = CashbookEntry.objects.all()
+    if sid is not None:
+        qs = qs.filter(site_id=sid)
+    agg = qs.aggregate(
+        inn=Sum("amount", filter=models_Q_in()),
+        out=Sum("amount", filter=models_Q_out()),
+    )
+    return (agg["inn"] or 0) - (agg["out"] or 0)
+
+
 def month_balance(day, site=None):
     """Solde courant = ouverture + recettes − dépenses (jamais de saisie libre).
 
@@ -99,7 +114,7 @@ def add_entry(*, day, category, label, direction, amount, created_by=None,
     with transaction.atomic():
         if MonthlyClosing.objects.filter(month=month_bounds(day)).exists():
             raise FinanceError("Mois clos : écriture impossible.")
-        bal = month_balance(day, site=site)
+        bal = total_balance(site=site)
         if direction == CashbookEntry.OUT and bal - amount < 0:
             raise FinanceError(
                 f"Sortie refusée : solde de la caisse "
