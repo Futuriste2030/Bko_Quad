@@ -4,7 +4,7 @@ import SiteFilter from '../components/SiteFilter';
 import { EmptyState, Field, PageHeader, SkeletonList } from '../components/ui';
 import Icon from '../lib/icons';
 import { useToast } from '../lib/toast';
-import { activeSiteId, createExpense, listEntries, listSites, todayISO, type Entry, type Site } from '../lib/api';
+import { activeSiteId, createExpense, listEntries, listSites, todayISO, updateEntry, type Entry, type Site } from '../lib/api';
 import { fcfa } from '../lib/format';
 
 const CATS = [
@@ -35,6 +35,15 @@ export default function Expenses() {
     const id = activeSiteId();
     return id ? String(id) : '';
   });
+  const [editItem, setEditItem] = useState<Entry | null>(null);
+  const [editBusy, setEditBusy] = useState(false);
+  const [eDay, setEDay] = useState('');
+
+  const [eCategory, setECategory] = useState('carburant');
+  const [eLabel, setELabel] = useState('');
+  const [eAmount, setEAmount] = useState('');
+  const [eSite, setESite] = useState('');
+  const [eReceipt, setEReceipt] = useState('');
 
   function load() {
     setLoading(true); setError('');
@@ -72,6 +81,37 @@ export default function Expenses() {
     finally { setBusy(false); }
   }
 
+  function openEdit(e: Entry) {
+    setEditItem(e);
+    setEDay(e.date.slice(0, 10));
+    setECategory(e.category);
+    setELabel(e.label);
+    setEAmount(String(e.amount));
+    setESite(e.site ? String(e.site) : '');
+    setEReceipt(e.receipt || '');
+  }
+  async function submitEdit() {
+    if (!editItem) return;
+    const n = Number(eAmount);
+    if (!eLabel.trim()) { notify('warning', 'Libellé requis', 'Décrivez la dépense en une phrase.'); return; }
+    if (!n || n < 1) { notify('warning', 'Montant invalide', 'Saisissez le montant en FCFA.'); return; }
+    setEditBusy(true);
+    try {
+      await updateEntry(editItem.id, {
+        date: eDay,
+        category: eCategory,
+        label: eLabel.trim(),
+        amount: Math.round(n),
+        site: eSite ? Number(eSite) : null,
+        receipt: eReceipt.trim(),
+      });
+      notify('success', 'Écriture modifiée', `${editItem.voucher} — ${fcfa(n)}.`);
+      setEditItem(null);
+      load();
+    } catch (e) { notify('error', 'Modification impossible', e instanceof Error ? e.message : ''); }
+    finally { setEditBusy(false); }
+  }
+
   return (
     <AppShell>
       <PageHeader
@@ -97,6 +137,45 @@ export default function Expenses() {
         </div>
         <p className="small muted" style={{ marginTop: 8 }}>Les recettes automatiques des réservations vivent dans la Caisse, pas ici.</p>
       </div>
+      {editItem && (
+        <div className="modal-backdrop" onClick={() => !editBusy && setEditItem(null)}>
+          <div className="modal form" role="dialog" aria-modal="true" aria-label="Modifier l'écriture" onClick={(e) => e.stopPropagation()}>
+            <h2>Modifier l'écriture</h2>
+            <p className="small muted">Bordereau {editItem.voucher} — le bordereau reste inchangé. Mois clos = modification impossible.</p>
+            <div className="form-2">
+              <Field label="Date" required htmlFor="ex-day">
+                <input id="ex-day" type="date" value={eDay} onChange={(e) => setEDay(e.target.value)} />
+              </Field>
+              <Field label="Catégorie" required htmlFor="ex-cat">
+                <select id="ex-cat" value={eCategory} onChange={(e) => setECategory(e.target.value)}>
+                  {CATS.map((c) => <option key={c.v} value={c.v}>{c.label}</option>)}
+                </select>
+              </Field>
+            </div>
+            <Field label="Site (optionnel)" htmlFor="ex-site">
+              <select id="ex-site" value={eSite} onChange={(e) => setESite(e.target.value)}>
+                <option value="">—</option>
+                {sites.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
+              </select>
+            </Field>
+            <Field label="Libellé" required htmlFor="ex-label">
+              <input id="ex-label" value={eLabel} onChange={(e) => setELabel(e.target.value)} />
+            </Field>
+            <Field label="Montant (FCFA)" required htmlFor="ex-amount">
+              <input id="ex-amount" inputMode="numeric" value={eAmount} onChange={(e) => setEAmount(e.target.value)} />
+            </Field>
+            <Field label="Réf. justificatif (optionnel)" htmlFor="ex-receipt">
+              <input id="ex-receipt" value={eReceipt} onChange={(e) => setEReceipt(e.target.value)} />
+            </Field>
+            <div className="modal-actions">
+              <button type="button" className="btn btn-ghost" onClick={() => setEditItem(null)} disabled={editBusy}>Revenir</button>
+              <button type="button" className="btn btn-primary" onClick={submitEdit} disabled={editBusy}>
+                {editBusy && <span className="caret" aria-hidden="true" />}Enregistrer
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
       {loading && <SkeletonList n={4} />}
       {error && <div className="alert-error" role="alert">{error}</div>}
       {!loading && !error && rows.length === 0 && (
@@ -119,7 +198,14 @@ export default function Expenses() {
                 {e.site_name && <span>{e.site_name}</span>}
                 {e.locked && <span>Verrouillée</span>}
               </div>
-              <div className="row-top"><strong className="num">{fcfa(e.amount)}</strong></div>
+              <div className="row-top">
+                <strong className="num">{fcfa(e.amount)}</strong>
+                {!e.locked && (
+                  <button type="button" className="btn btn-ghost btn-sm" onClick={() => openEdit(e)} aria-label="Modifier l'écriture">
+                    Modifier
+                  </button>
+                )}
+              </div>
             </article>
           ))}
         </div>
