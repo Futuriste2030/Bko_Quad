@@ -63,7 +63,7 @@ class Vehicle(models.Model):
     site = models.ForeignKey(Site, on_delete=models.PROTECT, related_name="vehicles")
     type = models.CharField(max_length=10, choices=TYPE_CHOICES, default="quad")
     model = models.CharField(max_length=120, help_text="Modèle, ex. Yamaha Grizzly 350")
-    plate = models.CharField(max_length=30, unique=True, help_text="Immatriculation ou numéro de parc")
+    plate = models.CharField(max_length=50, unique=True, help_text="Immatriculation ou numéro de parc")
     color = models.CharField(max_length=40, blank=True, default="")
     photo = models.ImageField(upload_to="flotte/", blank=True, null=True)
     status = models.CharField(max_length=15, choices=STATUS_CHOICES, default="en_service")
