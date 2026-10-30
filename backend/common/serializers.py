@@ -259,7 +259,10 @@ class VehicleSerializer(serializers.ModelSerializer):
                     from catalogue.models import Site
                     site = Site.objects.filter(pk=site).first()
                 validated_data["plate"] = self._gen_plate(site, validated_data.get("model", ""))
-        return super().create(validated_data)
+        try:
+            return super().create(validated_data)
+        except Exception as exc:  # expose real cause instead of a blind 500
+            raise serializers.ValidationError({"detail": str(exc)})
 
     def update(self, instance, validated_data):
         return super().update(instance, self._webp_photo(validated_data))
