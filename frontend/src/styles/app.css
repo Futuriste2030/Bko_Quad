@@ -36,6 +36,9 @@
   .topbar-actions { gap: 4px; }
   .avatar-btn span.small { display: none; }
   .avatar-btn { padding: 4px; }
+  .btn-row .btn { flex: 0 0 auto; width: auto; min-height: 36px; padding: 0 10px; font-size: var(--text-sm); }
+  .page-row { flex-direction: column; align-items: stretch; }
+  .page-row .btn-row { min-width: 0; }
 }
 
 /* ---------- Barre latérale ---------- */
