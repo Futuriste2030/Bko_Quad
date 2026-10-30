@@ -222,7 +222,7 @@ export default function Fleet() {
     setBusy(true);
     try {
       await deleteVehicle(toDelete.id);
-      notify('success', 'Engin retiré', `${toDelete.plate} — sans historique, sans créneau.`);
+      notify('success', 'Engin supprime', `${toDelete.plate} a ete retire de la flotte.`)
       setToDelete(null);
       load();
     } catch (e) { notify('error', 'Suppression impossible', e instanceof Error ? e.message : ''); }
@@ -569,14 +569,14 @@ export default function Fleet() {
                     <button type="button" className="btn btn-sm" onClick={() => { setOpenM(v); setMDate(new Date().toISOString().slice(0, 10)); setMKind('vidange'); setMPart(''); setMSerial(''); setMOil(''); setMQty(''); }}>
                       <Icon name="plus" size={16} />Maintenance
                     </button>
-                  <IconButton icon="x" label={`Retirer ${v.plate}`} className="danger plain" onClick={() => setToDelete(v)} />
+                  <IconButton icon="x" label={`Supprimer ${v.plate}`} className="danger plain" onClick={() => setToDelete(v)} />
                 </div>
               )}
               {toDelete && toDelete.id === v.id && (
                 <ConfirmDialog
                   title={`Retirer ${v.plate} ?`}
                   text="Possible seulement sans historique ni créneau lié — sinon passez-le hors service."
-                  confirmLabel="Retirer l’engin" danger busy={busy}
+                  confirmLabel="Supprimer l’engin" danger busy={busy}
                   onConfirm={doDelete} onClose={() => !busy && setToDelete(null)}
                 />
               )}
@@ -656,7 +656,7 @@ export default function Fleet() {
                     <ConfirmDialog
                       title={`Retirer ${p.name} ?`}
                       text={`La pièce N° ${p.serial_number} sera retirée du stock. Une pièce déjà utilisée ne peut jamais être supprimée.`}
-                      confirmLabel="Retirer la pièce" danger busy={busy}
+                      confirmLabel="Supprimer la pièce" danger busy={busy}
                       onConfirm={doDeletePart} onClose={() => !busy && setPartToDelete(null)}
                     />
                   )}

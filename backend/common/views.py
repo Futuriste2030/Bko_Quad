@@ -1108,14 +1108,15 @@ class VehicleViewSet(SiteScopeMixin, CatalogueViewSetMixin, viewsets.ModelViewSe
             return Response({"detail": str(exc), "traceback": traceback.format_exc()}, status=500)
 
     def destroy(self, request, *args, **kwargs):
-        from django.db.models import ProtectedError
-
+        instance = self.get_object()
+        from catalogue.models import Maintenance
+        Maintenance.objects.filter(vehicle=instance).delete()
         try:
-            return super().destroy(request, *args, **kwargs)
-        except ProtectedError:
-            return Response(
-                {"detail": "Engin utilisé (maintenances ou créneaux) : passez-le hors service."},
-                status=400)
+            instance.bookings.clear()
+        except Exception:
+            pass
+        instance.delete()
+        return Response(status=204)
 
 
 class MaintenanceViewSet(SiteScopeMixin, CatalogueViewSetMixin, viewsets.ModelViewSet):
