@@ -219,7 +219,9 @@ class VehicleSerializer(serializers.ModelSerializer):
 
     def _gen_plate(self, site, model):
         import re, random
-        from catalogue.models import Vehicle
+        from catalogue.models import Vehicle, Site
+        if isinstance(site, int):
+            site = Site.objects.filter(pk=site).first()
         site_slug = re.sub(r"[^A-Za-z0-9]", "", (site.name if site else "SITE")).upper()[:8] or "SITE"
         brand_slug = re.sub(r"[^A-Za-z0-9]", "", (model or "QUAD")).upper()[:8] or "QUAD"
         for _ in range(100):
