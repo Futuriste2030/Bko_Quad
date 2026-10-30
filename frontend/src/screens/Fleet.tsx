@@ -576,8 +576,8 @@ export default function Fleet() {
               )}
               {toDelete && toDelete.id === v.id && (
                 <ConfirmDialog
-                  title={`Retirer ${v.plate} ?`}
-                  text="Possible seulement sans historique ni créneau lié — sinon passez-le hors service."
+                  title={`Supprimer ${v.plate} ?`}
+                  text="La suppression retire l'engin de la flotte. Les maintenances et affectations liees seront supprimees."
                   confirmLabel="Supprimer l’engin" danger busy={busy}
                   onConfirm={doDelete} onClose={() => !busy && setToDelete(null)}
                 />
