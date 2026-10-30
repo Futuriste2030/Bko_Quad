@@ -64,8 +64,10 @@ class CashbookEntry(models.Model):
             raise RuntimeError("Écriture verrouillée : passez une écriture inverse approuvée.")
         super().save(*args, **kwargs)
 
-    def delete(self, *args, **kwargs):
-        raise RuntimeError("Écriture jamais supprimée : passez une écriture inverse approuvée.")
+    def delete(self, *args, force=False, **kwargs):
+        if not force:
+            raise RuntimeError("Écriture jamais supprimée : passez une écriture inverse approuvée.")
+        super().delete(*args, **kwargs)
 
 
 class CashAdvance(models.Model):

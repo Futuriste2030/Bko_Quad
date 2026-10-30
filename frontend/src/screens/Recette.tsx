@@ -29,6 +29,7 @@ export default function Recette() {
   const [busy, setBusy] = useState(false);
   const [busyClose, setBusyClose] = useState(false);
   const [exportBusy, setExportBusy] = useState(false);
+  const [reportDir, setReportDir] = useState<'' | 'in' | 'out'>('');
 
   useEffect(() => {
     const months = [...viewMonths].sort((a, b) => a - b);
@@ -67,13 +68,15 @@ export default function Recette() {
     const months = [...viewMonths].sort((a, b) => a - b);
     if (months.length === 0) { notify('warning', 'Mois requis', 'Sélectionnez au moins un mois.'); return; }
     const qs = months.map((m) => `${viewYear}-${String(m).padStart(2, '0')}`).join(',');
+    const dirParam = reportDir ? `&direction=${reportDir}` : '';
     setBusy(true);
     try {
       const nameLabel = months.length === 1
         ? (MOIS_FR[months[0] - 1].charAt(0).toUpperCase() + MOIS_FR[months[0] - 1].slice(1))
         : (months.length === 12 ? 'Annee' : months.length + 'mois');
-      await downloadPdf(`/finance/recette/pdf/?months=${encodeURIComponent(qs)}`,
-        `Recette_mensuelle_${nameLabel}_${viewYear}.pdf`);
+      const dirSuffix = reportDir === 'in' ? '_Recettes' : reportDir === 'out' ? '_Depenses' : '';
+      await downloadPdf(`/finance/recette/pdf/?months=${encodeURIComponent(qs)}${dirParam}`,
+        `Recette_mensuelle_${nameLabel}${dirSuffix}_${viewYear}.pdf`);
       notify('success', 'PDF téléchargé', 'Fiche de recette prête à envoyer.');
     } catch (e) {
       notify('error', 'Téléchargement impossible', e instanceof Error ? e.message : '');
@@ -126,13 +129,15 @@ export default function Recette() {
     const months = [...viewMonths].sort((a, b) => a - b);
     if (months.length === 0) { notify('warning', 'Mois requis', 'Sélectionnez au moins un mois.'); return; }
     const qs = months.map((m) => `${viewYear}-${String(m).padStart(2, '0')}`).join(',');
+    const dirParam = reportDir ? `&direction=${reportDir}` : '';
     setExportBusy(true);
     try {
       const nameLabel = months.length === 1
         ? (MOIS_FR[months[0] - 1].charAt(0).toUpperCase() + MOIS_FR[months[0] - 1].slice(1))
         : (months.length === 12 ? 'Annee' : months.length + 'mois');
-      await downloadPdf(`/finance/recette/pdf/?months=${encodeURIComponent(qs)}`,
-        `Recette_mensuelle_${nameLabel}_${viewYear}.pdf`);
+      const dirSuffix = reportDir === 'in' ? '_Recettes' : reportDir === 'out' ? '_Depenses' : '';
+      await downloadPdf(`/finance/recette/pdf/?months=${encodeURIComponent(qs)}${dirParam}`,
+        `Recette_mensuelle_${nameLabel}${dirSuffix}_${viewYear}.pdf`);
       notify('success', 'PDF téléchargé', 'Fiche de recette prête.');
     } catch (e) { notify('error', 'Téléchargement impossible', e instanceof Error ? e.message : ''); }
     finally { setExportBusy(false); }
@@ -212,6 +217,14 @@ export default function Recette() {
               </button>
             );
           })}
+        </div>
+        <div style={{ display: 'flex', gap: 6, marginTop: 8, flexWrap: 'wrap' }}>
+          <span style={{ alignSelf: 'center', fontSize: 13 }}>Rapport :</span>
+          {(['', 'in', 'out'] as const).map((d) => (
+            <button key={d || 'all'} type="button" className="chip" aria-pressed={reportDir === d} onClick={() => setReportDir(d)}>
+              {d === '' ? 'Tout' : d === 'in' ? 'Recettes' : 'Dépenses'}
+            </button>
+          ))}
         </div>
         <div className="modal-actions" style={{ marginTop: 12 }}>
           <button type="button" className="btn btn-primary" onClick={downloadPeriodPdf} disabled={exportBusy || viewMonths.size === 0}>

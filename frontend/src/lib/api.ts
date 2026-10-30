@@ -678,6 +678,14 @@ export const listSpareParts = (): Promise<SparePart[]> => list<SparePart>('/part
 export const listEntries = (): Promise<Entry[]> => list<Entry>('/entries/');
 export const updateEntry = (id: number, input: Partial<{ date: string; label: string; amount: number; category: string; site: number | null; receipt: string }>): Promise<Entry> =>
   patchOne<Entry>(`/entries/${id}/`, input);
+export async function deleteEntry(id: number): Promise<void> {
+  const r = await req(`/entries/${id}/`, { method: 'DELETE' });
+  if (r.status === 401) { logout(); throw new Error('Session expirée, reconnectez-vous.'); }
+  if (!r.ok) {
+    const err = await r.json().catch(() => ({}));
+    throw new Error(err.detail ?? 'Suppression impossible.');
+  }
+}
 export const listNotices = (): Promise<Notice[]> => list<Notice>('/notices/');
 export const listUsers = (): Promise<AdminUser[]> => list<AdminUser>('/users/');
 export const listHRUsers = (): Promise<HRUser[]> => list<HRUser>('/hr/accounts/');
