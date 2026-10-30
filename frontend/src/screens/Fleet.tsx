@@ -312,12 +312,31 @@ export default function Fleet() {
     }
     setBusy(true);
     try {
-      const payload: any = { site: Number(vSite), type: vType, model: vModel.trim(), color: vColor.trim(), photo: vPhoto ?? undefined };
-      if (!vPlateAuto && vPlate.trim()) payload.plate = vPlate.trim().toUpperCase();
-      const created = await createVehicle(payload);
-      notify('success', 'Engin enregistré', created.plate || vModel.trim());
-      setOpenV(false); setVModel(''); setVPlate(''); setVColor(''); setVPhoto(null); setVPhotoUrl('');
-      load();
+      // Jusqu'a 2 tentatives : si la plaque auto generee entre en collision
+      // (meme marque/modèle), on regenere une nouvelle plaque au lieu d'echouer.
+      for (let attempt = 0; attempt < 2; attempt++) {
+        try {
+          const payload: any = { site: Number(vSite), type: vType, model: vModel.trim(), color: vColor.trim(), photo: vPhoto ?? undefined };
+          if (!vPlateAuto && vPlate.trim()) payload.plate = vPlate.trim().toUpperCase();
+          const created = await createVehicle(payload);
+          notify('success', 'Engin enregistré', created.plate || vModel.trim());
+          setOpenV(false); setVModel(''); setVPlate(''); setVColor(''); setVPhoto(null); setVPhotoUrl('');
+          load();
+          return;
+        } catch (e) {
+          if (attempt === 0) {
+            // Regenerer une plaque fraiche (auto) et reessayer.
+            setVPlateAuto(true);
+            const site = sites.find((s) => String(s.id) === vSite);
+            const siteSlug = (site?.name || 'SITE').replace(/[^A-Za-z0-9]/g, '').toUpperCase().slice(0, 8) || 'SITE';
+            const brandSlug = vModel.trim().replace(/[^A-Za-z0-9]/g, '').toUpperCase().slice(0, 8) || 'QUAD';
+            const num = String(Math.floor(Math.random() * 1e8)).padStart(8, '0');
+            setVPlate(`Quad-${siteSlug}-${brandSlug}-${num}`);
+            continue;
+          }
+          throw e;
+        }
+      }
     } catch (e) { notify('error', 'Enregistrement impossible', e instanceof Error ? e.message : ''); }
     finally { setBusy(false); }
   }
