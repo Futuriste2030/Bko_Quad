@@ -865,7 +865,12 @@ def pdf_quad_labels(*, vehicles, site_name=None):
 
         site_label = v.site.name if getattr(v, "site_id", None) else ""
         date_label = v.created_at.strftime("%d/%m/%Y") if getattr(v, "created_at", None) else ""
-        block = [
+        logo = _logo_image(10 * mm, max_side=40 * mm)
+        block = []
+        if logo is not None:
+            block.append(logo)
+            block.append(Spacer(1, 2))
+        block += [
             Paragraph("<b>" + str(v.plate) + "</b>", st["h1"]),
             Spacer(1, 2),
             Paragraph("Site : " + site_label, st["small"]),
