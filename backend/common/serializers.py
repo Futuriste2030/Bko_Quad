@@ -218,51 +218,43 @@ class VehicleSerializer(serializers.ModelSerializer):
         return attrs
 
     def _gen_plate(self, site, model):
-        import re, random
         from catalogue.models import Vehicle, Site
+        from bookings.services import is_orpheus_site
         if isinstance(site, int):
             site = Site.objects.filter(pk=site).first()
-        site_slug = re.sub(r"[^A-Za-z0-9]", "", (site.name if site else "SITE")).upper()[:8] or "SITE"
-        brand_slug = re.sub(r"[^A-Za-z0-9]", "", (model or "QUAD")).upper()[:8] or "QUAD"
-        for _ in range(100):
-            num = "".join(str(random.randint(0, 9)) for _ in range(8))
-            plate = f"Quad-{site_slug}-{brand_slug}-{num}"
-            if not Vehicle.objects.filter(plate=plate).exists():
-                return plate
-        # fallback sequentiel garanti unique
+        site_name = getattr(site, "name", "") or ""
+        prefix = "quad-enfant" if is_orpheus_site(site_name) else "quad"
+        # Auto-increment : quad-01, quad-02, ... (quad-enfant-01 sur Orpheus).
         n = 1
         while True:
-            plate = f"Quad-{site_slug}-{brand_slug}-{n:08d}"
+            plate = f"{prefix}-{n:02d}"
             if not Vehicle.objects.filter(plate=plate).exists():
                 return plate
             n += 1
 
     def create(self, validated_data):
-        try:
-            validated_data = self._webp_photo(validated_data)
-            if not (validated_data.get("plate") or "").strip():
+        validated_data = self._webp_photo(validated_data)
+        if not (validated_data.get("plate") or "").strip():
+            site = validated_data.get("site")
+            if site is None:
+                sid = validated_data.get("site")
+                from catalogue.models import Site
+                if isinstance(sid, int):
+                    site = Site.objects.filter(pk=sid).first()
+            validated_data["plate"] = self._gen_plate(site, validated_data.get("model", ""))
+        from django.db import IntegrityError
+        for _ in range(5):
+            try:
+                return super().create(validated_data)
+            except IntegrityError as exc:
+                if "plate" not in str(exc).lower():
+                    raise
                 site = validated_data.get("site")
-                if site is None:
-                    sid = validated_data.get("site")
+                if isinstance(site, int):
                     from catalogue.models import Site
-                    if isinstance(sid, int):
-                        site = Site.objects.filter(pk=sid).first()
+                    site = Site.objects.filter(pk=site).first()
                 validated_data["plate"] = self._gen_plate(site, validated_data.get("model", ""))
-            from django.db import IntegrityError
-            for _ in range(5):
-                try:
-                    return super().create(validated_data)
-                except IntegrityError as exc:
-                    if "plate" not in str(exc).lower():
-                        raise
-                    site = validated_data.get("site")
-                    if isinstance(site, int):
-                        from catalogue.models import Site
-                        site = Site.objects.filter(pk=site).first()
-                    validated_data["plate"] = self._gen_plate(site, validated_data.get("model", ""))
-            return super().create(validated_data)
-        except Exception as exc:  # expose real cause instead of a blind 500
-            raise serializers.ValidationError({"detail": str(exc)})
+        return super().create(validated_data)
 
     def update(self, instance, validated_data):
         return super().update(instance, self._webp_photo(validated_data))

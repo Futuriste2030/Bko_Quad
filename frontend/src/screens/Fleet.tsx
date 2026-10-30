@@ -95,12 +95,13 @@ export default function Fleet() {
   // Génération en direct de l'immatriculation à partir du site et du modèle.
   useEffect(() => {
     if (!vPlateAuto) return;
-    if (!vSite || !vModel.trim()) { setVPlate(''); return; }
+    if (!vSite) { setVPlate(''); return; }
     const site = sites.find((s) => String(s.id) === vSite);
-    const siteSlug = (site?.name || 'SITE').replace(/[^A-Za-z0-9]/g, '').toUpperCase().slice(0, 8) || 'SITE';
-    const brandSlug = vModel.trim().replace(/[^A-Za-z0-9]/g, '').toUpperCase().slice(0, 8) || 'QUAD';
-    const num = String(Math.floor(Math.random() * 1e8)).padStart(8, '0');
-    setVPlate(`Quad-${siteSlug}-${brandSlug}-${num}`);
+    const isOrpheus = /orpheus/i.test(site?.name || '');
+    const prefix = isOrpheus ? 'quad-enfant' : 'quad';
+    const used = items.filter((v) => String(v.site) === vSite).length;
+    const num = String(used + 1).padStart(2, '0');
+    setVPlate(`${prefix}-${num}`);
   }, [vSite, vModel, vPlateAuto, sites]);
   const [mKind, setMKind] = useState('vidange');
   const [mPart, setMPart] = useState('');
@@ -328,10 +329,11 @@ export default function Fleet() {
             // Regenerer une plaque fraiche (auto) et reessayer.
             setVPlateAuto(true);
             const site = sites.find((s) => String(s.id) === vSite);
-            const siteSlug = (site?.name || 'SITE').replace(/[^A-Za-z0-9]/g, '').toUpperCase().slice(0, 8) || 'SITE';
-            const brandSlug = vModel.trim().replace(/[^A-Za-z0-9]/g, '').toUpperCase().slice(0, 8) || 'QUAD';
-            const num = String(Math.floor(Math.random() * 1e8)).padStart(8, '0');
-            setVPlate(`Quad-${siteSlug}-${brandSlug}-${num}`);
+            const isOrpheus = /orpheus/i.test(site?.name || '');
+            const prefix = isOrpheus ? 'quad-enfant' : 'quad';
+            const used = items.filter((v) => String(v.site) === vSite).length;
+            const num = String(used + 1).padStart(2, '0');
+            setVPlate(`${prefix}-${num}`);
             continue;
           }
           throw e;

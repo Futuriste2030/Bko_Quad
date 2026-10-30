@@ -1100,13 +1100,6 @@ class VehicleViewSet(SiteScopeMixin, CatalogueViewSetMixin, viewsets.ModelViewSe
     queryset = Vehicle.objects.all().order_by("plate")
     serializer_class = VehicleSerializer
 
-    def create(self, request, *args, **kwargs):
-        try:
-            return super().create(request, *args, **kwargs)
-        except Exception as exc:
-            import traceback
-            return Response({"detail": str(exc), "traceback": traceback.format_exc()}, status=500)
-
     def destroy(self, request, *args, **kwargs):
         instance = self.get_object()
         from catalogue.models import Maintenance
@@ -1695,6 +1688,11 @@ class VehicleLabelsPdfView(APIView):
             qs = qs.filter(type=vtype)
         vehicles = list(qs.order_by("site", "plate"))
         filename, content = pdf_docs.pdf_quad_labels(vehicles=vehicles, site_name=site_name)
+        import datetime
+        site_part = (site_name or "tous").strip().replace(" ", "-").lower()
+        type_part = (vtype or "tous").strip().replace(" ", "-").lower()
+        year = datetime.datetime.now().year
+        filename = f"etiquette-{site_part}-{type_part}-{year}.pdf"
         return FileResponse(io.BytesIO(content), as_attachment=True,
                             filename=filename, content_type="application/pdf")
 
