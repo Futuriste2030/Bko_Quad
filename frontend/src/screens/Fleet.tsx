@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import AppShell from '../components/AppShell';
 import { CompanyFooter, CompanyHeader } from '../components/CompanyDoc';
 import { ConfirmDialog, EmptyState, Field, IconButton, PageHeader, SkeletonList } from '../components/ui';
@@ -13,6 +13,7 @@ import {
 import { fcfa } from '../lib/format';
 import { downloadPdf } from '../lib/api';
 import { mediaUrl } from '../lib/api';
+import decodeQR from '@paulmillr/qr/decode.js';
 
 const STATUS: Record<string, { label: string; cls: string }> = {
   en_service: { label: 'En service', cls: 'badge-confirmed' },
@@ -67,6 +68,10 @@ export default function Fleet() {
     const p = new URLSearchParams(window.location.search);
     return (p.get('plate') || p.get('numero') || p.get('q') || '').trim();
   });
+  const [scanOpen, setScanOpen] = useState(false);
+  const [scanError, setScanError] = useState('');
+  const videoRef = useRef<HTMLVideoElement>(null);
+  const streamRef = useRef<MediaStream | null>(null);
   const [openV, setOpenV] = useState(false);
   const [openM, setOpenM] = useState<Vehicle | null>(null);
   const [busy, setBusy] = useState(false);
@@ -136,6 +141,59 @@ export default function Fleet() {
   }
   useEffect(load, []);
   useEffect(() => { if (openV) { setVPlate(''); setVPlateAuto(true); } }, [openV]);
+
+  useEffect(() => {
+    if (!scanOpen) {
+      if (streamRef.current) { streamRef.current.getTracks().forEach((t) => t.stop()); streamRef.current = null; }
+      return;
+    }
+    setScanError('');
+    (async () => {
+      try {
+        const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' } });
+        streamRef.current = stream;
+        if (videoRef.current) { videoRef.current.srcObject = stream; await videoRef.current.play(); }
+        scanLoop();
+      } catch (e) {
+        setScanError('Caméra inaccessible. Vérifiez les permissions ou utilisez HTTPS.');
+      }
+    })();
+    return () => {
+      if (streamRef.current) { streamRef.current.getTracks().forEach((t) => t.stop()); streamRef.current = null; }
+    };
+  }, [scanOpen]);
+
+  async function scanLoop() {
+    const video = videoRef.current;
+    if (!video || !scanOpen) return;
+    const canvas = document.createElement('canvas');
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return;
+    let stopped = false;
+    const tick = async () => {
+      if (stopped || !scanOpen) return;
+      if (video.readyState >= 2) {
+        const w = video.videoWidth || 640;
+        const h = video.videoHeight || 480;
+        canvas.width = w; canvas.height = h;
+        ctx.drawImage(video, 0, 0, w, h);
+        const img = ctx.getImageData(0, 0, w, h);
+        try {
+          const text = await decodeQR({ width: w, height: h, data: img.data });
+          if (text) {
+            stopped = true;
+            const m = String(text).match(/QUAD:(.+)/i);
+            const plate = (m ? m[1] : text).trim();
+            setScanPlate(plate);
+            setScanOpen(false);
+            return;
+          }
+        } catch { /* no qr */ }
+      }
+      requestAnimationFrame(tick);
+    };
+    requestAnimationFrame(tick);
+  }
 
   const partMatch = useMemo(() => {
     const serial = mSerial.trim().toLowerCase();
@@ -342,7 +400,7 @@ export default function Fleet() {
               try { await downloadPdf('/vehicles/labels/pdf/', 'etiquettes-quads.pdf'); notify('success', 'PDF téléchargé', 'Étiquettes prêtes.'); }
               catch (e) { notify('error', 'Téléchargement impossible', e instanceof Error ? e.message : ''); }
             }}><Icon name="download" size={18} />Étiquettes PDF</button>
-            <button type="button" className="btn btn-ghost no-print" onClick={() => { setScanPlate(''); if (typeof window !== 'undefined') { const u = new URL(window.location.href); u.searchParams.delete('plate'); u.searchParams.delete('numero'); u.searchParams.delete('q'); window.history.replaceState({}, '', u.toString()); } }} title="Scanner un QR de quad"><Icon name="scan" size={18} />Scanner</button>
+            <button type="button" className="btn btn-ghost no-print" onClick={() => setScanOpen(true)} title="Scanner un QR de quad"><Icon name="scan" size={18} />Scanner</button>
           </>
         )}
       />
@@ -429,6 +487,19 @@ export default function Fleet() {
   {scanPlate && rows.length === 0 && (
     <div className="alert-error" role="alert" style={{ marginBottom: 12 }}>
       Quad « {scanPlate} » introuvable ou n'appartient pas à ce site.
+    </div>
+  )}
+  {scanOpen && (
+    <div className="modal-backdrop" onClick={() => setScanOpen(false)}>
+      <div className="modal form" role="dialog" aria-modal="true" aria-label="Scanner un QR de quad" onClick={(e) => e.stopPropagation()}>
+        <h2>Scanner un QR de quad</h2>
+        <p className="small muted">Pointez la caméra vers le QR code collé sur le quad.</p>
+        {scanError && <div className="alert-error" role="alert">{scanError}</div>}
+        <video ref={videoRef} style={{ width: '100%', borderRadius: 8, background: '#000' }} playsInline muted />
+        <div className="modal-actions">
+          <button type="button" className="btn btn-ghost" onClick={() => setScanOpen(false)}>Fermer</button>
+        </div>
+      </div>
     </div>
   )}
   {loading && <SkeletonList n={4} />}
