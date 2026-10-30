@@ -238,28 +238,28 @@ class VehicleSerializer(serializers.ModelSerializer):
             n += 1
 
     def create(self, validated_data):
-        validated_data = self._webp_photo(validated_data)
-        if not (validated_data.get("plate") or "").strip():
-            site = validated_data.get("site")
-            if site is None:
-                sid = validated_data.get("site")
-                from catalogue.models import Site
-                if isinstance(sid, int):
-                    site = Site.objects.filter(pk=sid).first()
-            validated_data["plate"] = self._gen_plate(site, validated_data.get("model", ""))
-        from django.db import IntegrityError
-        for _ in range(5):
-            try:
-                return super().create(validated_data)
-            except IntegrityError as exc:
-                if "plate" not in str(exc).lower():
-                    raise
-                site = validated_data.get("site")
-                if isinstance(site, int):
-                    from catalogue.models import Site
-                    site = Site.objects.filter(pk=site).first()
-                validated_data["plate"] = self._gen_plate(site, validated_data.get("model", ""))
         try:
+            validated_data = self._webp_photo(validated_data)
+            if not (validated_data.get("plate") or "").strip():
+                site = validated_data.get("site")
+                if site is None:
+                    sid = validated_data.get("site")
+                    from catalogue.models import Site
+                    if isinstance(sid, int):
+                        site = Site.objects.filter(pk=sid).first()
+                validated_data["plate"] = self._gen_plate(site, validated_data.get("model", ""))
+            from django.db import IntegrityError
+            for _ in range(5):
+                try:
+                    return super().create(validated_data)
+                except IntegrityError as exc:
+                    if "plate" not in str(exc).lower():
+                        raise
+                    site = validated_data.get("site")
+                    if isinstance(site, int):
+                        from catalogue.models import Site
+                        site = Site.objects.filter(pk=site).first()
+                    validated_data["plate"] = self._gen_plate(site, validated_data.get("model", ""))
             return super().create(validated_data)
         except Exception as exc:  # expose real cause instead of a blind 500
             raise serializers.ValidationError({"detail": str(exc)})
