@@ -571,23 +571,24 @@ export default function Fleet() {
                     <button type="button" className="btn btn-sm" onClick={() => { setOpenM(v); setMDate(new Date().toISOString().slice(0, 10)); setMKind('vidange'); setMPart(''); setMSerial(''); setMOil(''); setMQty(''); }}>
                       <Icon name="plus" size={16} />Maintenance
                     </button>
-                  <IconButton icon="x" label={`Supprimer ${v.plate}`} className="danger plain" onClick={() => setToDelete(v)} />
+                  <button type="button" className="btn btn-sm btn-danger" onClick={() => setToDelete(v)}>Supprimer</button>
                 </div>
-              )}
-              {toDelete && toDelete.id === v.id && (
-                <ConfirmDialog
-                  title={`Supprimer ${v.plate} ?`}
-                  text="La suppression retire l'engin de la flotte. Les maintenances et affectations liees seront supprimees."
-                  confirmLabel="Supprimer l’engin" danger busy={busy}
-                  onConfirm={doDelete} onClose={() => !busy && setToDelete(null)}
-                />
               )}
             </article>
           ))}
         </div>
       )}
 
-      {/* Stock de pièces de rechange : les pièces consommées restent visibles,
+      {toDelete && (
+        <ConfirmDialog
+          title={`Supprimer ${toDelete.plate} ?`}
+          text="La suppression retire l'engin de la flotte. Les maintenances et affectations liees seront supprimees."
+          confirmLabel="Supprimer l'engin" danger busy={busy}
+          onConfirm={doDelete} onClose={() => !busy && setToDelete(null)}
+        />
+      )}
+
+      {marker} pièces de rechange : les pièces consommées restent visibles,
           grisées, avec l'engin et la date de la maintenance. */}
       {!loading && !error && (
       <section className="card parts-stock" aria-label="Stock de pièces de rechange">
