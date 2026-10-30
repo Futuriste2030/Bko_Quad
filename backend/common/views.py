@@ -1235,12 +1235,12 @@ class ExpenseView(APIView):
 
 
 class CashbookEntryViewSet(SiteScopeMixin, mixins.ListModelMixin, mixins.RetrieveModelMixin,
-                           mixins.UpdateModelMixin, viewsets.GenericViewSet):
+                           mixins.UpdateModelMixin, mixins.DestroyModelMixin, viewsets.GenericViewSet):
     queryset = CashbookEntry.objects.all().order_by("-date", "-id")
     serializer_class = CashbookEntrySerializer
 
     def get_permissions(self):
-        if self.action in ("update", "partial_update"):
+        if self.action in ("update", "partial_update", "destroy"):
             return [ManagerRoles()]
         return [FinanceReadRoles()]
 
@@ -1263,6 +1263,22 @@ class CashbookEntryViewSet(SiteScopeMixin, mixins.ListModelMixin, mixins.Retriev
             if site is None or getattr(site, "id", site) != imposed:
                 raise PermissionDenied("Vous ne pouvez modifier l'écriture que sur votre site.")
         serializer.save()
+
+    def perform_destroy(self, instance):
+        from rest_framework.exceptions import PermissionDenied
+        if instance.locked:
+            raise PermissionDenied("Écriture verrouillée : suppression impossible.")
+        from finance.models import MonthlyClosing
+        first = instance.date.replace(day=1)
+        if MonthlyClosing.objects.filter(month=first).exists():
+            raise PermissionDenied("Mois clos : suppression impossible.")
+        # Interdit si liée à un paiement ou une réservation.
+        if getattr(instance, "payment_id", None) or getattr(instance, "booking_id", None):
+            raise PermissionDenied("Écriture liée à un paiement/réservation : suppression impossible.")
+        imposed = scoped_site(self.request.user)
+        if imposed is not None and getattr(instance, "site_id", None) not in (None, imposed):
+            raise PermissionDenied("Hors de votre site.")
+        instance.delete(force=True)
 
 
 class MonthSummaryView(APIView):
@@ -1609,10 +1625,16 @@ class RecettePdfView(APIView):
         if not month_list:
             return Response({"detail": "Aucun mois sélectionné."}, status=400)
 
+        direction_filter = (request.query_params.get("direction") or "").strip().lower()
+        if direction_filter not in ("", "in", "out"):
+            return Response({"detail": "Direction invalide."}, status=400)
+
         months_data = []
         for (y, m) in month_list:
             first = date(y, m, 1)
             entries = base.filter(date__year=y, date__month=m).order_by("date", "id")
+            if direction_filter:
+                entries = entries.filter(direction=direction_filter)
             # Ouverture = cumul des écritures antérieures (report automatique)
             prior = base.filter(date__lt=first).aggregate(
                 inn=Sum("amount", filter=Q(direction=CashbookEntry.IN)),
@@ -1639,7 +1661,8 @@ class RecettePdfView(APIView):
             })
 
         filename, content = pdf_docs.pdf_recette_periode(
-            months_data=months_data, site_name=site_name)
+            months_data=months_data, site_name=site_name,
+            direction=direction_filter)
         return FileResponse(io.BytesIO(content), as_attachment=True,
                             filename=filename, content_type="application/pdf")
 

@@ -721,7 +721,7 @@ def pdf_recette_mensuelle(*, year, month, site_name=None, entries=None,
     return filename, _render(title, flow)
 
 
-def pdf_recette_periode(*, months_data, site_name=None):
+def pdf_recette_periode(*, months_data, site_name=None, direction=""):
     from reportlab.platypus import Paragraph, Spacer, Table, TableStyle, PageBreak
     from reportlab.lib import colors
     from reportlab.lib.colors import HexColor
@@ -732,12 +732,13 @@ def pdf_recette_periode(*, months_data, site_name=None):
     company, _ = CompanyProfile.objects.get_or_create(pk=1)
     st = _styles()
     scope = site_name or ""
+    dir_label = " — RECETTES" if direction == "in" else (" — DÉPENSES" if direction == "out" else "")
     if len(months_data) == 1:
         md = months_data[0]
-        title = "FICHE DE RECETTE" + (" — " + scope if scope else "")
+        title = "FICHE DE RECETTE" + dir_label + (" — " + scope if scope else "")
         period_label = (_MOIS_FR[md["month"] - 1] + " " + str(md["year"])).capitalize()
     else:
-        title = "FICHE DE RECETTE" + (" — " + scope if scope else "")
+        title = "FICHE DE RECETTE" + dir_label + (" — " + scope if scope else "")
         first_m = months_data[0]
         last_m = months_data[-1]
         period_label = (_MOIS_FR[first_m["month"] - 1] + " " + str(first_m["year"]) + " → " +
@@ -826,8 +827,9 @@ def pdf_recette_periode(*, months_data, site_name=None):
 
     first_m = months_data[0]
     last_m = months_data[-1]
+    dir_suffix = "-recettes" if direction == "in" else ("-depenses" if direction == "out" else "")
     if len(months_data) == 1:
-        filename = "recette-mensuelle-" + str(first_m["year"]) + "-" + "{:02d}".format(first_m["month"]) + ("-" + code_part(site_name, 12) if site_name else "") + ".pdf"
+        filename = "recette-mensuelle-" + str(first_m["year"]) + "-" + "{:02d}".format(first_m["month"]) + dir_suffix + ("-" + code_part(site_name, 12) if site_name else "") + ".pdf"
     else:
-        filename = "recette-periode-" + str(first_m["year"]) + "{:02d}".format(first_m["month"]) + "-" + str(last_m["year"]) + "{:02d}".format(last_m["month"]) + ("-" + code_part(site_name, 12) if site_name else "") + ".pdf"
+        filename = "recette-periode-" + str(first_m["year"]) + "{:02d}".format(first_m["month"]) + "-" + str(last_m["year"]) + "{:02d}".format(last_m["month"]) + dir_suffix + ("-" + code_part(site_name, 12) if site_name else "") + ".pdf"
     return filename, _render(title, flow)

@@ -4,7 +4,7 @@ import SiteFilter from '../components/SiteFilter';
 import { EmptyState, Field, PageHeader, SkeletonList } from '../components/ui';
 import Icon from '../lib/icons';
 import { useToast } from '../lib/toast';
-import { activeSiteId, createExpense, listEntries, listSites, todayISO, updateEntry, type Entry, type Site } from '../lib/api';
+import { activeSiteId, createExpense, deleteEntry, downloadPdf, listEntries, listSites, todayISO, updateEntry, type Entry, type Site } from '../lib/api';
 import { fcfa } from '../lib/format';
 
 const CATS = [
@@ -35,6 +35,8 @@ export default function Expenses() {
     const id = activeSiteId();
     return id ? String(id) : '';
   });
+  const [reportMonth, setReportMonth] = useState(() => new Date().toISOString().slice(0, 7));
+  const [reportBusy, setReportBusy] = useState(false);
   const [editItem, setEditItem] = useState<Entry | null>(null);
   const [editBusy, setEditBusy] = useState(false);
   const [eDay, setEDay] = useState('');
@@ -111,6 +113,23 @@ export default function Expenses() {
     } catch (e) { notify('error', 'Modification impossible', e instanceof Error ? e.message : ''); }
     finally { setEditBusy(false); }
   }
+  async function handleDelete(e: Entry) {
+    if (!window.confirm(`Supprimer l'écriture ${e.voucher} (${fcfa(e.amount)}) ?`)) return;
+    try {
+      await deleteEntry(e.id);
+      notify('success', 'Écriture supprimée', `${e.voucher}.`);
+      load();
+    } catch (err) { notify('error', 'Suppression impossible', err instanceof Error ? err.message : ''); }
+  }
+  async function downloadReport() {
+    setReportBusy(true);
+    try {
+      await downloadPdf(`/finance/recette/pdf/?months=${encodeURIComponent(reportMonth)}&direction=out`,
+        `Recette_mensuelle_Depenses_${reportMonth}.pdf`);
+      notify('success', 'Rapport téléchargé', 'Rapport des dépenses prêt.');
+    } catch (e) { notify('error', 'Téléchargement impossible', e instanceof Error ? e.message : ''); }
+    finally { setReportBusy(false); }
+  }
 
   return (
     <AppShell>
@@ -134,6 +153,16 @@ export default function Expenses() {
             ))}
           </div>
           <SiteFilter />
+        </div>
+        <div className="form-2" style={{ marginTop: 8 }}>
+          <Field label="Mois du rapport" htmlFor="rep-month">
+            <input id="rep-month" type="month" value={reportMonth} onChange={(e) => e.target.value && setReportMonth(e.target.value)} />
+          </Field>
+          <Field label="Télécharger le rapport" htmlFor="rep-btn">
+            <button type="button" className="btn btn-primary" onClick={downloadReport} disabled={reportBusy}>
+              {reportBusy && <span className="caret" aria-hidden="true" />}Rapport dépenses (PDF)
+            </button>
+          </Field>
         </div>
         <p className="small muted" style={{ marginTop: 8 }}>Les recettes automatiques des réservations vivent dans la Caisse, pas ici.</p>
       </div>
@@ -201,9 +230,14 @@ export default function Expenses() {
               <div className="row-top">
                 <strong className="num">{fcfa(e.amount)}</strong>
                 {!e.locked && (
-                  <button type="button" className="btn btn-ghost btn-sm" onClick={() => openEdit(e)} aria-label="Modifier l'écriture">
-                    Modifier
-                  </button>
+                  <>
+                    <button type="button" className="btn btn-ghost btn-sm" onClick={() => openEdit(e)} aria-label="Modifier l'écriture">
+                      Modifier
+                    </button>
+                    <button type="button" className="btn btn-ghost btn-sm" onClick={() => handleDelete(e)} aria-label="Supprimer l'écriture">
+                      Supprimer
+                    </button>
+                  </>
                 )}
               </div>
             </article>

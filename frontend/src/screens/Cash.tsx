@@ -7,7 +7,7 @@ import { EmptyState, Field, PageHeader, Portal, SkeletonList } from '../componen
 import Icon from '../lib/icons';
 import { useAuth } from '../lib/auth';
 import { useToast } from '../lib/toast';
-import { activeSiteId, createExpense, listBookings, listEntries, listSites, updateEntry, type Booking, type Entry, type Site } from '../lib/api';
+import { activeSiteId, createExpense, deleteEntry, listBookings, listEntries, listSites, updateEntry, type Booking, type Entry, type Site } from '../lib/api';
 import { fcfa } from '../lib/format';
 
 /* Caisse : le livre unique — recettes auto + recettes manuelles (ancien),
@@ -138,6 +138,14 @@ export default function Cash() {
       load();
     } catch (e) { notify('error', 'Modification impossible', e instanceof Error ? e.message : ''); }
     finally { setEditBusy(false); }
+  }
+  async function handleDelete(e: Entry) {
+    if (!window.confirm(`Supprimer l'écriture ${e.voucher} (${fcfa(e.amount)}) ?`)) return;
+    try {
+      await deleteEntry(e.id);
+      notify('success', 'Écriture supprimée', `${e.voucher}.`);
+      load();
+    } catch (err) { notify('error', 'Suppression impossible', err instanceof Error ? err.message : ''); }
   }
 
   return (
@@ -282,9 +290,14 @@ export default function Cash() {
               <div className="row-top">
                 <strong className="num">{fcfa(e.amount)}</strong>
                 {mayWrite && !e.locked && (
-                  <button type="button" className="btn btn-ghost btn-sm" onClick={() => openEdit(e)} aria-label="Modifier l'écriture">
-                    Modifier
-                  </button>
+                  <>
+                    <button type="button" className="btn btn-ghost btn-sm" onClick={() => openEdit(e)} aria-label="Modifier l'écriture">
+                      Modifier
+                    </button>
+                    <button type="button" className="btn btn-ghost btn-sm" onClick={() => handleDelete(e)} aria-label="Supprimer l'écriture">
+                      Supprimer
+                    </button>
+                  </>
                 )}
               </div>
             </article>
