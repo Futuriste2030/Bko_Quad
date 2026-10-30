@@ -423,12 +423,11 @@ table.table { width: 100%; border-collapse: collapse; font-size: var(--text-base
 
 /* ---------- Modales ---------- */
 .modal-backdrop {
-  position: fixed; inset: 0; z-index: 50;
-  background: rgba(0,0,0,0.45);
-  display: grid; place-items: end center; padding: 16px;
+  position: fixed; inset: 0; z-index: 9999;
+  background: rgba(0,0,0,0.55);
+  display: grid; place-items: center; padding: 16px;
   animation: fade var(--dur-1) var(--ease) both;
 }
-@media (min-width: 640px) { .modal-backdrop { place-items: center; } }
 @keyframes fade { from { opacity: 0; } to { opacity: 1; } }
 .modal {
   width: 100%; max-width: 480px; max-height: calc(100dvh - 32px); overflow-y: auto;
@@ -439,7 +438,7 @@ table.table { width: 100%; border-collapse: collapse; font-size: var(--text-base
 }
 .modal h2 { margin: 0 0 4px; font-size: var(--text-xl); }
 .modal p { color: var(--ink-muted); }
-.modal-actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 16px; }
+.modal-actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 16px; position: sticky; bottom: 0; background: var(--surface); padding-top: 8px; }
 .modal-actions .btn { flex: 1 1 120px; min-width: 0; }
 
 /* Menu profil */
