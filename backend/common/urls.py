@@ -52,6 +52,7 @@ from common.views import (
     TotpVerifyView,
     TrackedLineViewSet,
     UserViewSet,
+    VehicleLabelsPdfView,
     VehicleViewSet,
     WebhookView,
 )
@@ -104,6 +105,7 @@ urlpatterns = [
     path("bank/report/", BankReportPdfView.as_view(), name="bank-report"),
     path("finance/month/close/", CloseMonthView.as_view(), name="close-month"),
     path("finance/recette/pdf/", RecettePdfView.as_view(), name="recette-pdf"),
+    path("vehicles/labels/pdf/", VehicleLabelsPdfView.as_view(), name="vehicle-labels-pdf"),
     path("finance/month/pdf/", RecettePdfView.as_view(), name="finance-month-pdf"),
     path("finance/report/", RecettePdfView.as_view(), name="finance-report"),
     path("recette/pdf/", RecettePdfView.as_view(), name="recette-pdf-short"),

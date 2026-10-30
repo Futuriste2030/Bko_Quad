@@ -196,10 +196,12 @@ class DailyClosingSerializer(serializers.ModelSerializer):
 class VehicleSerializer(serializers.ModelSerializer):
     site_name = serializers.SerializerMethodField()
     status = serializers.CharField(default="en_service", required=False)
+    plate = serializers.CharField(required=False, allow_blank=True, allow_null=True)
 
     class Meta:
         model = Vehicle
         fields = ["id", "site", "site_name", "type", "model", "plate", "color", "photo", "status"]
+        extra_kwargs = {"plate": {"required": False}}
 
     def get_site_name(self, o):
         return o.site.name if o.site_id else ""
@@ -215,8 +217,32 @@ class VehicleSerializer(serializers.ModelSerializer):
                 raise serializers.ValidationError({"photo": "Image invalide."})
         return attrs
 
+    def _gen_plate(self, site, model):
+        import re, random
+        from catalogue.models import Vehicle
+        site_slug = re.sub(r"[^A-Za-z0-9]", "", (site.name if site else "SITE")).upper()[:8] or "SITE"
+        brand_slug = re.sub(r"[^A-Za-z0-9]", "", (model or "QUAD")).upper()[:8] or "QUAD"
+        for _ in range(20):
+            num = "".join(str(random.randint(0, 9)) for _ in range(8))
+            plate = f"Quad-{site_slug}-{brand_slug}-{num}"
+            if not Vehicle.objects.filter(plate=plate).exists():
+                return plate
+        # fallback séquentiel
+        n = Vehicle.objects.count() + 1
+        return f"Quad-{site_slug}-{brand_slug}-{n:08d}"
+
     def create(self, validated_data):
-        return super().create(self._webp_photo(validated_data))
+        validated_data = self._webp_photo(validated_data)
+        if not (validated_data.get("plate") or "").strip():
+            site = validated_data.get("site")
+            if site is None:
+                # tenter de récupérer via l'id
+                sid = validated_data.get("site")
+                from catalogue.models import Site
+                if isinstance(sid, int):
+                    site = Site.objects.filter(pk=sid).first()
+            validated_data["plate"] = self._gen_plate(site, validated_data.get("model", ""))
+        return super().create(validated_data)
 
     def update(self, instance, validated_data):
         return super().update(instance, self._webp_photo(validated_data))

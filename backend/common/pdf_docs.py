@@ -833,3 +833,73 @@ def pdf_recette_periode(*, months_data, site_name=None, direction=""):
     else:
         filename = "recette-periode-" + str(first_m["year"]) + "{:02d}".format(first_m["month"]) + "-" + str(last_m["year"]) + "{:02d}".format(last_m["month"]) + dir_suffix + ("-" + code_part(site_name, 12) if site_name else "") + ".pdf"
     return filename, _render(title, flow)
+
+def pdf_quad_labels(*, vehicles, site_name=None):
+    import io
+    from reportlab.platypus import Paragraph, Spacer, Table, TableStyle
+    from reportlab.lib import colors
+    from reportlab.lib.colors import HexColor
+    from reportlab.lib.units import mm
+    from reportlab.platypus import Image
+    from common.models import CompanyProfile
+    import qrcode
+
+    company, _ = CompanyProfile.objects.get_or_create(pk=1)
+    st = _styles()
+    title = "ETIQUETTES QUADS" + (" - " + site_name if site_name else "")
+    flow = _header_flowables(
+        company, title,
+        "Imprime le " + bamako_date(datetime.now(BAMAKO))
+        + (" . " + site_name if site_name else " . Tout le reseau"))
+
+    labels = []
+    for v in vehicles:
+        qr = qrcode.QRCode(box_size=4, border=1)
+        qr.add_data("QUAD:" + str(v.plate))
+        qr.make(fit=True)
+        img = qr.make_image(fill_color="black", back_color="white")
+        buf = io.BytesIO()
+        img.save(buf, format="PNG")
+        buf.seek(0)
+        qr_img = Image(buf, width=22 * mm, height=22 * mm)
+
+        site_label = v.site.name if getattr(v, "site_id", None) else ""
+        date_label = v.created_at.strftime("%d/%m/%Y") if getattr(v, "created_at", None) else ""
+        block = [
+            Paragraph("<b>" + str(v.plate) + "</b>", st["h1"]),
+            Spacer(1, 2),
+            Paragraph("Site : " + site_label, st["small"]),
+            Paragraph("Modele : " + str(v.model), st["small"]),
+            Paragraph("Date d'ajout : " + date_label, st["small"]),
+            Spacer(1, 4),
+            qr_img,
+            Paragraph("Scannez pour verifier l'authenticite", st["small"]),
+        ]
+        labels.append(block)
+
+    rows = []
+    for i in range(0, len(labels), 2):
+        left = labels[i]
+        right = labels[i + 1] if i + 1 < len(labels) else [Paragraph("", st["small"])]
+        cell_left = Table([[x] for x in left], colWidths=[80 * mm])
+        cell_right = Table([[x] for x in right], colWidths=[80 * mm])
+        rows.append([cell_left, cell_right])
+
+    if rows:
+        t = Table(rows, colWidths=[85 * mm, 85 * mm])
+        t.setStyle(TableStyle([
+            ("VALIGN", (0, 0), (-1, -1), "TOP"),
+            ("LEFTPADDING", (0, 0), (-1, -1), 6),
+            ("RIGHTPADDING", (0, 0), (-1, -1), 6),
+            ("TOPPADDING", (0, 0), (-1, -1), 6),
+            ("BOTTOMPADDING", (0, 0), (-1, -1), 6),
+            ("BOX", (0, 0), (-1, -1), 0.6, HexColor("#b5b0a6")),
+            ("INNERGRID", (0, 0), (-1, -1), 0.4, HexColor("#b5b0a6")),
+        ]))
+        flow.append(t)
+
+    flow.append(Spacer(1, 10))
+    flow.append(Paragraph("Decoupez le long des pointilles.", st["small"]))
+
+    filename = "etiquettes-quads" + ("-" + code_part(site_name, 12) if site_name else "") + ".pdf"
+    return filename, _render(title, flow)

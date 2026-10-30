@@ -1667,6 +1667,30 @@ class RecettePdfView(APIView):
                             filename=filename, content_type="application/pdf")
 
 
+class VehicleLabelsPdfView(APIView):
+    """Étiquettes à coller sur les quads : numéro, site, date, QR code unique."""
+    permission_classes = [FinanceReadRoles]
+
+    def get(self, request):
+        import io
+        from django.http import FileResponse
+        from common import pdf_docs
+        from catalogue.models import Vehicle
+
+        site = requested_site(request)
+        site_name = Site.objects.filter(pk=site).values_list("name", flat=True).first() if site else None
+        qs = Vehicle.objects.all().select_related("site")
+        if site is not None:
+            qs = qs.filter(site_id=site)
+        vtype = (request.query_params.get("type") or "").strip()
+        if vtype:
+            qs = qs.filter(type=vtype)
+        vehicles = list(qs.order_by("site", "plate"))
+        filename, content = pdf_docs.pdf_quad_labels(vehicles=vehicles, site_name=site_name)
+        return FileResponse(io.BytesIO(content), as_attachment=True,
+                            filename=filename, content_type="application/pdf")
+
+
 class UserViewSet(SiteScopeMixin, viewsets.ModelViewSet):
     """Comptes du système : réservés au super administrateur."""
 

@@ -11,6 +11,7 @@ import {
   type Maintenance, type Site, type SparePart, type Vehicle,
 } from '../lib/api';
 import { fcfa } from '../lib/format';
+import { downloadPdf } from '../lib/api';
 import { mediaUrl } from '../lib/api';
 
 const STATUS: Record<string, { label: string; cls: string }> = {
@@ -61,6 +62,11 @@ export default function Fleet() {
   const [error, setError] = useState('');
   const [fSite, setFSite] = useState('all');
   const [fStatus, setFStatus] = useState('all');
+  const [scanPlate, setScanPlate] = useState<string>(() => {
+    if (typeof window === 'undefined') return '';
+    const p = new URLSearchParams(window.location.search);
+    return (p.get('plate') || p.get('numero') || p.get('q') || '').trim();
+  });
   const [openV, setOpenV] = useState(false);
   const [openM, setOpenM] = useState<Vehicle | null>(null);
   const [busy, setBusy] = useState(false);
@@ -135,8 +141,9 @@ export default function Fleet() {
   }, [parts, partQ]);
 
   const rows = useMemo(() => items.filter((v) =>
-    (fSite === 'all' || String(v.site) === fSite) && (fStatus === 'all' || v.status === fStatus),
-  ), [items, fSite, fStatus]);
+    (fSite === 'all' || String(v.site) === fSite) && (fStatus === 'all' || v.status === fStatus) &&
+    (!scanPlate || v.plate.toLowerCase() === scanPlate.toLowerCase()),
+  ), [items, fSite, fStatus, scanPlate]);
   const inService = items.filter((v) => v.status === 'en_service').length;
 
   async function doDelete() {
@@ -228,14 +235,16 @@ export default function Fleet() {
   const repCost = repRows.reduce((s, x) => s + x.cost, 0);
 
   async function submitVehicle() {
-    if (!vSite || !vModel.trim() || !vPlate.trim()) {
-      notify('warning', 'Site, modèle et immatriculation requis', 'L’immatriculation identifie l’engin.');
+    if (!vSite || !vModel.trim()) {
+      notify('warning', 'Site et modèle requis', 'Le site et le modèle sont obligatoires.');
       return;
     }
     setBusy(true);
     try {
-      await createVehicle({ site: Number(vSite), type: vType, model: vModel.trim(), plate: vPlate.trim().toUpperCase(), color: vColor.trim(), photo: vPhoto ?? undefined });
-      notify('success', 'Engin enregistré', vPlate.trim().toUpperCase());
+      const payload: any = { site: Number(vSite), type: vType, model: vModel.trim(), color: vColor.trim(), photo: vPhoto ?? undefined };
+      if (vPlate.trim()) payload.plate = vPlate.trim().toUpperCase();
+      const created = await createVehicle(payload);
+      notify('success', 'Engin enregistré', created.plate || vModel.trim());
       setOpenV(false); setVModel(''); setVPlate(''); setVColor(''); setVPhoto(null); setVPhotoUrl('');
       load();
     } catch (e) { notify('error', 'Enregistrement impossible', e instanceof Error ? e.message : ''); }
@@ -316,6 +325,11 @@ export default function Fleet() {
           <>
             {mayEdit && <button type="button" className="btn btn-accent" onClick={() => setOpenV(true)}><Icon name="plus" size={18} />Engin</button>}
             <button type="button" className="btn btn-ghost no-print" onClick={() => setReport((v) => !v)}><Icon name="file" size={18} />Rapport mensuel</button>
+            <button type="button" className="btn btn-ghost no-print" onClick={async () => {
+              try { await downloadPdf('/vehicles/labels/pdf/', 'etiquettes-quads.pdf'); notify('success', 'PDF téléchargé', 'Étiquettes prêtes.'); }
+              catch (e) { notify('error', 'Téléchargement impossible', e instanceof Error ? e.message : ''); }
+            }}><Icon name="download" size={18} />Étiquettes PDF</button>
+            <button type="button" className="btn btn-ghost no-print" onClick={() => { setScanPlate(''); if (typeof window !== 'undefined') { const u = new URL(window.location.href); u.searchParams.delete('plate'); u.searchParams.delete('numero'); u.searchParams.delete('q'); window.history.replaceState({}, '', u.toString()); } }} title="Scanner un QR de quad"><Icon name="scan" size={18} />Scanner</button>
           </>
         )}
       />
@@ -388,7 +402,23 @@ export default function Fleet() {
           </Field>
         </div>
       </div>
-      {loading && <SkeletonList n={4} />}
+      {scanPlate && rows.length === 1 && (
+    <div className="alert-success" role="status" style={{ marginBottom: 12 }}>
+      <strong>Quad authentique</strong> — cet engin appartient à ce site.
+      <div style={{ marginTop: 6 }}>
+        <button type="button" className="btn btn-primary btn-sm" onClick={() => {
+          const v = rows[0];
+          setOpenM(v);
+        }}>Maintenance</button>
+      </div>
+    </div>
+  )}
+  {scanPlate && rows.length === 0 && (
+    <div className="alert-error" role="alert" style={{ marginBottom: 12 }}>
+      Quad « {scanPlate} » introuvable ou n'appartient pas à ce site.
+    </div>
+  )}
+  {loading && <SkeletonList n={4} />}
       {error && <div className="alert-error" role="alert">{error}</div>}
       {!loading && !error && inService === 0 && (
         <div className="banner banner-warning" role="alert">
@@ -554,7 +584,7 @@ export default function Fleet() {
             </div>
             <Field label="Modèle" required htmlFor="v-model"><input id="v-model" value={vModel} onChange={(e) => setVModel(e.target.value)} placeholder="Ex. Yamaha Grizzly 350" /></Field>
             <div className="form-2">
-              <Field label="Immatriculation" required htmlFor="v-plate"><input id="v-plate" value={vPlate} onChange={(e) => setVPlate(e.target.value)} placeholder="Ex. Q-012" style={{ textTransform: 'uppercase' }} /></Field>
+              <Field label="Immatriculation (auto si vide)" htmlFor="v-plate"><input id="v-plate" value={vPlate} onChange={(e) => setVPlate(e.target.value)} placeholder="Laisser vide pour génération automatique" style={{ textTransform: 'uppercase' }} /></Field>
               <Field label="Couleur" htmlFor="v-color">
                 <select id="v-color" value={vColor} onChange={(e) => setVColor(e.target.value)}>
                   <option value="">Choisir…</option>
