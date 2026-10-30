@@ -81,10 +81,22 @@ export default function Fleet() {
   const [vType, setVType] = useState('quad');
   const [vModel, setVModel] = useState('');
   const [vPlate, setVPlate] = useState('');
+  const [vPlateAuto, setVPlateAuto] = useState(true);
   const [vColor, setVColor] = useState('');
   /* Photo de l'engin : aperçu local, le serveur convertit en WebP. */
   const [vPhoto, setVPhoto] = useState<File | null>(null);
   const [vPhotoUrl, setVPhotoUrl] = useState('');
+
+  // Génération en direct de l'immatriculation à partir du site et du modèle.
+  useEffect(() => {
+    if (!vPlateAuto) return;
+    if (!vSite || !vModel.trim()) { setVPlate(''); return; }
+    const site = sites.find((s) => String(s.id) === vSite);
+    const siteSlug = (site?.name || 'SITE').replace(/[^A-Za-z0-9]/g, '').toUpperCase().slice(0, 8) || 'SITE';
+    const brandSlug = vModel.trim().replace(/[^A-Za-z0-9]/g, '').toUpperCase().slice(0, 8) || 'QUAD';
+    const num = String(Math.floor(Math.random() * 1e8)).padStart(8, '0');
+    setVPlate(`Quad-${siteSlug}-${brandSlug}-${num}`);
+  }, [vSite, vModel, vPlateAuto, sites]);
   const [mKind, setMKind] = useState('vidange');
   const [mPart, setMPart] = useState('');
   const [mSerial, setMSerial] = useState('');
@@ -123,6 +135,7 @@ export default function Fleet() {
       .finally(() => setLoading(false));
   }
   useEffect(load, []);
+  useEffect(() => { if (openV) { setVPlate(''); setVPlateAuto(true); } }, [openV]);
 
   const partMatch = useMemo(() => {
     const serial = mSerial.trim().toLowerCase();
@@ -242,7 +255,7 @@ export default function Fleet() {
     setBusy(true);
     try {
       const payload: any = { site: Number(vSite), type: vType, model: vModel.trim(), color: vColor.trim(), photo: vPhoto ?? undefined };
-      if (vPlate.trim()) payload.plate = vPlate.trim().toUpperCase();
+      if (!vPlateAuto && vPlate.trim()) payload.plate = vPlate.trim().toUpperCase();
       const created = await createVehicle(payload);
       notify('success', 'Engin enregistré', created.plate || vModel.trim());
       setOpenV(false); setVModel(''); setVPlate(''); setVColor(''); setVPhoto(null); setVPhotoUrl('');
@@ -584,7 +597,7 @@ export default function Fleet() {
             </div>
             <Field label="Modèle" required htmlFor="v-model"><input id="v-model" value={vModel} onChange={(e) => setVModel(e.target.value)} placeholder="Ex. Yamaha Grizzly 350" /></Field>
             <div className="form-2">
-              <Field label="Immatriculation (auto si vide)" htmlFor="v-plate"><input id="v-plate" value={vPlate} onChange={(e) => setVPlate(e.target.value)} placeholder="Laisser vide pour génération automatique" style={{ textTransform: 'uppercase' }} /></Field>
+              <Field label="Immatriculation (auto)" htmlFor="v-plate"><input id="v-plate" value={vPlate} onChange={(e) => { setVPlate(e.target.value); setVPlateAuto(false); }} placeholder="Générée automatiquement" style={{ textTransform: 'uppercase' }} /></Field>
               <Field label="Couleur" htmlFor="v-color">
                 <select id="v-color" value={vColor} onChange={(e) => setVColor(e.target.value)}>
                   <option value="">Choisir…</option>
