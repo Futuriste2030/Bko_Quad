@@ -588,7 +588,7 @@ export default function Fleet() {
         />
       )}
 
-      {marker} pièces de rechange : les pièces consommées restent visibles,
+      {/* Stock de pièces de rechange : les pièces consommées restent visibles,
           grisées, avec l'engin et la date de la maintenance. */}
       {!loading && !error && (
       <section className="card parts-stock" aria-label="Stock de pièces de rechange">
