@@ -1100,6 +1100,13 @@ class VehicleViewSet(SiteScopeMixin, CatalogueViewSetMixin, viewsets.ModelViewSe
     queryset = Vehicle.objects.all().order_by("plate")
     serializer_class = VehicleSerializer
 
+    def create(self, request, *args, **kwargs):
+        try:
+            return super().create(request, *args, **kwargs)
+        except Exception as exc:
+            import traceback
+            return Response({"detail": str(exc), "traceback": traceback.format_exc()}, status=500)
+
     def destroy(self, request, *args, **kwargs):
         from django.db.models import ProtectedError
 
