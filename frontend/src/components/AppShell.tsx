@@ -216,7 +216,7 @@ export default function AppShell({ children, anomalies = 0 }: { children: ReactN
             </button>
             {siteMenu && (
               <div className="menu" role="menu" aria-label="Choisir le site à afficher"
-                style={{ position: 'absolute', top: 'calc(100% + 6px)', left: 0, right: 'auto', minWidth: 260, zIndex: 60 }}>
+                style={{ position: 'absolute', top: 'calc(100% + 6px)', left: 0, right: 'auto', minWidth: 220, maxWidth: 'calc(100vw - 24px)', maxHeight: '70vh', overflowY: 'auto', zIndex: 60 }}>
                 <div style={{ padding: '8px 12px' }}><strong>Filtrer par site</strong></div>
                 <hr />
                 <button type="button" role="menuitem" onClick={() => switchSite('reseau')}>

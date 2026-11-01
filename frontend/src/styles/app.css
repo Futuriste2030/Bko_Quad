@@ -31,10 +31,11 @@
 /* Mobile 360px : la barre déborde et recouvre le logo — on garde le logo,
    on masque le nom d'enseigne et le nom d'utilisateur (photo conservée). */
 @media (max-width: 639px) {
-  .topbar { gap: 8px; padding: 0 12px; overflow: hidden; }
+  .topbar { gap: 6px; padding: 0 10px; overflow: hidden; }
   .brand strong { display: none; }
-  .topbar .badge { max-width: 120px; }
-  .topbar-actions { gap: 4px; }
+  .topbar .badge { max-width: 96px; font-size: 11px; padding: 2px 6px; }
+  .topbar-actions { gap: 2px; flex-shrink: 0; }
+  .topbar-spacer { min-width: 0; }
   .avatar-btn span.small { display: none; }
   .avatar-btn { padding: 4px; }
   .btn-row .btn { flex: 0 0 auto; width: auto; min-height: 36px; padding: 0 10px; font-size: var(--text-sm); }
