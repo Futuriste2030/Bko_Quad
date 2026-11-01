@@ -209,7 +209,7 @@ export default function AppShell({ children, anomalies = 0 }: { children: ReactN
           <div ref={siteRef} style={{ position: 'relative' }}>
             <button type="button" className="badge badge-confirmed" aria-haspopup="menu" aria-expanded={siteMenu}
               title="Choisir le site à afficher" onClick={() => setSiteMenu((v) => !v)}
-              style={{ font: 'inherit', cursor: 'pointer' }}>
+              style={{ font: 'inherit', cursor: 'pointer', maxWidth: '42vw', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
               <Icon name={base === '/s/reseau' ? 'chart' : 'calendar'} size={14} />
               {siteLabel}
               <Icon name="chevD" size={14} />
@@ -235,7 +235,8 @@ export default function AppShell({ children, anomalies = 0 }: { children: ReactN
             )}
           </div>
         ) : (
-          <span className="badge badge-confirmed" title="Site attribué à votre compte">
+          <span className="badge badge-confirmed" title="Site attribué à votre compte"
+            style={{ maxWidth: '42vw', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', display: 'inline-flex', alignItems: 'center', gap: 4 }}>
             <Icon name={base === '/s/reseau' ? 'chart' : 'calendar'} size={14} />
             {siteLabel}
           </span>

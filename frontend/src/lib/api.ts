@@ -909,28 +909,62 @@ export async function downloadExport(query: ExportQuery, format: ExportFormat): 
   setTimeout(() => URL.revokeObjectURL(link.href), 5000);
 }
 
-/* Téléchargement PDF serveur (reçu, facture, rapport bancaire) : blob + nom. */
+/* Téléchargement PDF serveur (reçu, facture, rapport bancaire) : blob + nom.
+   Ordre volontaire : on tente d'abord le partage natif (iOS) pour obtenir
+   le bouton Partager/Enregistrer, puis on bascule sur un lien direct. */
 export async function downloadPdf(url: string, filename: string): Promise<void> {
   const token = localStorage.getItem('bko.access') ?? '';
   const fullUrl = `/api/v1${withSite(url)}${withSite(url).includes('?') ? '&' : '?'}token=${encodeURIComponent(token)}`;
-  /* Repli direct : lien avec jeton, pour les WebViews ou fetch+blob ne fonctionne pas. */
+
+  /* 1. Partage natif (iOS Safari / PWA) : donne accès à "Enregistrer dans Fichiers",
+     AirDrop, etc. */
+  try {
+    const r = await fetch(`/api/v1${withSite(url)}`, { headers: authHeaders() });
+    if (r.status === 401) { logout(); throw new Error('Session expirée, reconnectez-vous.'); }
+    if (r.ok) {
+      const blob = await r.blob();
+      const file = new File([blob], filename, { type: 'application/pdf' });
+      const nav = navigator as Navigator & {
+        canShare?: (data: { files?: File[] }) => boolean;
+        share?: (data: { files?: File[]; title?: string }) => Promise<void>;
+      };
+      if (nav.canShare && nav.canShare({ files: [file] }) && nav.share) {
+        try {
+          await nav.share({ files: [file], title: filename });
+          return;
+        } catch (e) {
+          if ((e as { name?: string })?.name === 'AbortError') return;
+          /* annulation ou échec : on continue vers le repli */
+        }
+      }
+      /* Pas de partage natif : ouvrir le PDF dans un nouvel onglet (iOS). */
+      const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent)
+        || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+      const blobUrl = URL.createObjectURL(blob);
+      if (isIOS) {
+        const w = window.open(blobUrl, '_blank');
+        if (!w) {
+          const link = document.createElement('a');
+          link.href = blobUrl; link.target = '_blank'; link.rel = 'noopener';
+          document.body.appendChild(link); link.click(); link.remove();
+        }
+      } else {
+        const link = document.createElement('a');
+        link.href = blobUrl; link.download = filename;
+        document.body.appendChild(link); link.click(); link.remove();
+      }
+      setTimeout(() => URL.revokeObjectURL(blobUrl), 60000);
+      return;
+    }
+  } catch { /* repli sur le lien direct */ }
+
+  /* 2. Repli direct : lien avec jeton (WebViews, bloqueurs, etc.). */
   const link = document.createElement('a');
   link.href = fullUrl;
   link.download = filename;
   link.rel = 'noopener';
+  link.target = '_blank';
   document.body.appendChild(link); link.click(); link.remove();
-  /* Tentative via fetch+blob pour les navigateurs (partage natif, etc.). */
-  try {
-    const r = await fetch(`/api/v1${withSite(url)}`, { headers: authHeaders() });
-    if (r.status === 401) { logout(); throw new Error('Session expiree, reconnectez-vous.'); }
-    if (!r.ok) throw new Error('Document indisponible.');
-    const blob = await r.blob();
-    const file = new File([blob], filename, { type: 'application/pdf' });
-    if (typeof navigator !== 'undefined' && typeof navigator.share === 'function'
-        && typeof navigator.canShare === 'function' && navigator.canShare({ files: [file] })) {
-      try { await navigator.share({ files: [file], title: filename }); } catch { /* annulation */ }
-    }
-  } catch { /* repli sur le lien direct deja clique */ }
 }
 
 export interface TrackedLine { id: number; label: string; number: string; site: number | null; site_name: string; active: boolean; collect_enabled: boolean; last_sync: string | null }

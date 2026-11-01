@@ -31,8 +31,9 @@
 /* Mobile 360px : la barre déborde et recouvre le logo — on garde le logo,
    on masque le nom d'enseigne et le nom d'utilisateur (photo conservée). */
 @media (max-width: 639px) {
-  .topbar { gap: 8px; padding: 0 12px; }
+  .topbar { gap: 8px; padding: 0 12px; overflow: hidden; }
   .brand strong { display: none; }
+  .topbar .badge { max-width: 120px; }
   .topbar-actions { gap: 4px; }
   .avatar-btn span.small { display: none; }
   .avatar-btn { padding: 4px; }
