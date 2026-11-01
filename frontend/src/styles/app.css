@@ -31,10 +31,10 @@
 /* Mobile 360px : la barre déborde et recouvre le logo — on garde le logo,
    on masque le nom d'enseigne et le nom d'utilisateur (photo conservée). */
 @media (max-width: 639px) {
-  .topbar { gap: 6px; padding: 0 10px; overflow: hidden; }
+  .topbar { gap: 6px; padding: 0 10px; overflow: visible; }
   .brand strong { display: none; }
-  .topbar .badge { max-width: 96px; font-size: 11px; padding: 2px 6px; }
-  .topbar-actions { gap: 2px; flex-shrink: 0; }
+  .topbar .badge { max-width: 80px; font-size: 10px; padding: 2px 4px; }
+  .topbar-actions { gap: 2px; flex-shrink: 0; z-index: 31; }
   .topbar-spacer { min-width: 0; }
   .avatar-btn span.small { display: none; }
   .avatar-btn { padding: 4px; }
@@ -445,7 +445,7 @@ table.table { width: 100%; border-collapse: collapse; font-size: var(--text-base
 
 /* Menu profil */
 .menu {
-  position: absolute; top: calc(var(--topbar-h) - 6px); right: 12px; z-index: 40;
+  position: absolute; top: calc(var(--topbar-h) - 6px); right: 12px; z-index: 100;
   min-width: 240px; background: var(--surface); color: var(--ink);
   border: 1px solid var(--border-strong); border-radius: var(--radius-md);
   box-shadow: var(--shadow-hard); padding: 6px;
