@@ -370,7 +370,7 @@ export default function Payroll() {
                 </>
               )}
               <button type="button" className="btn btn-ghost" onClick={() => window.print()}>
-                <Icon name="download" size={18} />Imprimer
+                <Icon name="download" size={18} />Télécharger en PDF
               </button>
             </div>
             {warn && !locked && <div className="alert-error" role="alert" style={{ marginTop: 8 }}>{warn}</div>}

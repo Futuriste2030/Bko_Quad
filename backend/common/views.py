@@ -1747,6 +1747,12 @@ class UserViewSet(SiteScopeMixin, viewsets.ModelViewSet):
     permission_classes = [SuperAdminRoles]
     http_method_names = ["get", "post", "patch", "head", "options"]
 
+    def get_permissions(self):
+        if self.action in ("list", "retrieve"):
+            from common.permissions import AdminRoles
+            return [AdminRoles()]
+        return [SuperAdminRoles()]
+
     def perform_update(self, serializer):
         # Garde : on ne désactive jamais son propre compte (verrouillage du Hub).
         if (serializer.instance == self.request.user

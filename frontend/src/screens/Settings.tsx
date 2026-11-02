@@ -9,7 +9,7 @@ import { useTheme } from '../lib/theme';
 import { useToast } from '../lib/toast';
 import {
   changePassword, createSite, createUser, deleteSite, getCompany, getVersion, listLines, listSites, listUsers, mediaUrl, resetUserPassword, saveCompany,
-  toggleCollect, toggleUserActive, totpEnroll, totpVerify, type AdminUser, type Site, type TrackedLine,
+  toggleCollect, toggleUserActive, totpEnroll, totpVerify, updateUser, type AdminUser, type Site, type TrackedLine,
 } from '../lib/api';
 import { currentPerm, setNotifyEnabled, useNotifyEnabled, type NotifPerm } from '../lib/notifpref';
 
@@ -20,6 +20,7 @@ const ROLES: { v: Role; label: string }[] = [
   { v: 'admin', label: 'Direction / admin' },
   { v: 'superadmin', label: 'Super administrateur (système)' },
   { v: 'comptable', label: 'Comptable' },
+  { v: 'mecanicien', label: 'Mécanicien' },
 ];
 
 const SITE_ROLES: Role[] = ['agent', 'guide', 'responsable'];
@@ -67,6 +68,14 @@ export default function Settings() {
   const [resetTarget, setResetTarget] = useState<AdminUser | null>(null);
   const [resetPw, setResetPw] = useState('');
   const [toggleTarget, setToggleTarget] = useState<AdminUser | null>(null);
+  const [editUser, setEditUser] = useState<AdminUser | null>(null);
+  const [editBusy, setEditBusy] = useState(false);
+  const [eUName, setEUName] = useState('');
+  const [eUFirst, setEUFirst] = useState('');
+  const [eULast, setEULast] = useState('');
+  const [eUPhone, setEUPhone] = useState('');
+  const [eURole, setEURole] = useState<Role>('agent');
+  const [eUSite, setEUSite] = useState('');
   const needsSite = SITE_ROLES.includes(uRole);
 
   useEffect(() => {
@@ -327,6 +336,58 @@ export default function Settings() {
           </div>
         </section>
       )}
+      {editUser && (
+        <Portal><div className="modal-backdrop" onClick={() => !editBusy && setEditUser(null)}>
+          <div className="modal form" role="dialog" aria-modal="true" aria-label="Modifier l'utilisateur" onClick={(e) => e.stopPropagation()}>
+            <h2>Modifier {editUser.username}</h2>
+            <p className="small muted">Le mot de passe se modifie via « Réinitialiser ».</p>
+            <div className="form-2">
+              <Field label="Identifiant" required htmlFor="eu-name"><input id="eu-name" value={eUName} onChange={(e) => setEUName(e.target.value)} /></Field>
+              <Field label="Téléphone" required htmlFor="eu-phone"><input id="eu-phone" type="tel" value={eUPhone} onChange={(e) => setEUPhone(e.target.value)} /></Field>
+            </div>
+            <div className="form-2">
+              <Field label="Prénom" htmlFor="eu-first"><input id="eu-first" value={eUFirst} onChange={(e) => setEUFirst(e.target.value)} /></Field>
+              <Field label="Nom" htmlFor="eu-last"><input id="eu-last" value={eULast} onChange={(e) => setEULast(e.target.value)} /></Field>
+            </div>
+            <div className="form-2">
+              <Field label="Rôle" required htmlFor="eu-role">
+                <select id="eu-role" value={eURole} onChange={(e) => setEURole(e.target.value as Role)}>
+                  {ROLES.map((r) => <option key={r.v} value={r.v}>{r.label}</option>)}
+                </select>
+              </Field>
+              <Field label="Site" htmlFor="eu-site">
+                <select id="eu-site" value={eUSite} onChange={(e) => setEUSite(e.target.value)}>
+                  <option value="">—</option>
+                  {sites.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
+                </select>
+              </Field>
+            </div>
+            <div className="modal-actions">
+              <button type="button" className="btn btn-ghost" onClick={() => setEditUser(null)} disabled={editBusy}>Revenir</button>
+              <button type="button" className="btn btn-primary" onClick={async () => {
+                if (!editUser) return;
+                setEditBusy(true);
+                try {
+                  const updated = await updateUser(editUser.id, {
+                    username: eUName.trim(),
+                    phone: eUPhone.trim(),
+                    first_name: eUFirst.trim(),
+                    last_name: eULast.trim(),
+                    role: eURole,
+                    site: eUSite ? Number(eUSite) : null,
+                  });
+                  setUsers((prev) => prev.map((u) => (u.id === updated.id ? updated : u)));
+                  notify('success', 'Utilisateur modifié', updated.username);
+                  setEditUser(null);
+                } catch (e) { notify('error', 'Modification impossible', e instanceof Error ? e.message : ''); }
+                finally { setEditBusy(false); }
+              }} disabled={editBusy}>
+                {editBusy && <span className="caret" aria-hidden="true" />}Enregistrer
+              </button>
+            </div>
+          </div>
+        </div></Portal>
+      )}
       {resetTarget && (
         <Portal><div className="modal-backdrop" onClick={() => !busy && setResetTarget(null)}>
           <div className="modal form" role="dialog" aria-modal="true" aria-label={`Réinitialiser ${resetTarget.username}`} onClick={(e) => e.stopPropagation()}>
@@ -394,6 +455,11 @@ export default function Settings() {
                   {' '}<span className={`badge ${u.is_active ? 'badge-confirmed' : 'badge-expired'}`}>{u.is_active ? 'Actif' : 'Désactivé'}</span>
                   <br /><span className="small muted num">{u.phone}</span></span>
                 <span className="btn-row">
+                  <button type="button" className="btn btn-sm btn-ghost" onClick={() => {
+                    setEditUser(u);
+                    setEUName(u.username); setEUFirst(u.first_name || ''); setEULast(u.last_name || '');
+                    setEUPhone(u.phone); setEURole((u.role as Role) || 'agent'); setEUSite(u.site ? String(u.site) : '');
+                  }}>Modifier</button>
                   <button type="button" className="btn btn-sm btn-ghost" onClick={() => { setResetTarget(u); setResetPw(''); }}>Réinitialiser</button>
                   {u.id !== user?.id && (
                     u.is_active

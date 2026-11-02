@@ -1,7 +1,7 @@
 import { createContext, useCallback, useContext, useEffect, useState, type ReactNode } from 'react';
 import { cachedMe, fetchMe, isLoggedIn, login as apiLogin, logout as apiLogout, NetworkError, type Me } from './api';
 
-export type Role = 'agent' | 'guide' | 'responsable' | 'admin' | 'superadmin' | 'comptable' | 'client';
+export type Role = 'agent' | 'guide' | 'responsable' | 'admin' | 'superadmin' | 'comptable' | 'mecanicien' | 'client';
 
 export const ROLE_LABELS: Record<Role, string> = {
   agent: 'Agent de réservation',
@@ -10,6 +10,7 @@ export const ROLE_LABELS: Record<Role, string> = {
   admin: 'Direction / admin',
   superadmin: 'Super administrateur (système)',
   comptable: 'Comptable',
+  mecanicien: 'Mécanicien',
   client: 'Client',
 };
 

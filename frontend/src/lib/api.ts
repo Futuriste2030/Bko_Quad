@@ -1006,6 +1006,12 @@ export async function createUser(input: {
 }): Promise<AdminUser> {
   return postOne<AdminUser>('/users/', input);
 }
+export async function updateUser(id: number, input: Partial<{
+  username: string; phone: string; role: string;
+  first_name: string; last_name: string; site: number | null;
+}>): Promise<AdminUser> {
+  return patchOne<AdminUser>(`/users/${id}/`, input);
+}
 
 export async function updateMe(input: { first_name?: string; last_name?: string; phone?: string }): Promise<Me> {
   return patchOne<Me>('/auth/me/', input);

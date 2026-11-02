@@ -185,6 +185,24 @@ def close_sheet(*, sheet_id, actor=None):
             raise PayrollError("Cachet du directeur requis avant clôture.")
         sheet.status = "closed"
         sheet.save(update_fields=["status"])
+        # Déduction du total de la paie de la caisse.
+        try:
+            from finance.models import CashbookEntry
+            from finance.services import add_entry
+            total = sum(s.net for s in sheet.slips.all())
+            if total > 0:
+                add_entry(
+                    day=sheet.month,
+                    category="salaire",
+                    label="Paie %s - versements salaires" % sheet.month.strftime("%m/%Y"),
+                    direction=CashbookEntry.OUT,
+                    amount=total,
+                    site=None,
+                    receipt="PAIE-%s" % sheet.month.strftime("%Y%m"),
+                    created_by=actor,
+                )
+        except Exception:
+            pass
         if actor is not None:
             from audit.services import log_action
 

@@ -12,6 +12,7 @@ class User(AbstractUser):
         ("admin", "Direction / administrateur"),
         ("superadmin", "Super administrateur (système)"),
         ("comptable", "Comptable"),
+        ("mecanicien", "Mécanicien"),
         ("client", "Client"),
     ]
 
