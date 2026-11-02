@@ -908,3 +908,64 @@ def pdf_quad_labels(*, vehicles, site_name=None):
 
     filename = "etiquettes-quads" + ("-" + code_part(site_name, 12) if site_name else "") + ".pdf"
     return filename, _render(title, flow)
+
+def pdf_payroll_sheet(*, sheet):
+    from reportlab.platypus import Paragraph, Spacer, Table, TableStyle
+    from reportlab.lib import colors
+    from reportlab.lib.colors import HexColor
+    from common.models import CompanyProfile
+
+    company, _ = CompanyProfile.objects.get_or_create(pk=1)
+    st = _styles()
+    slips = list(sheet.slips.all().order_by("number"))
+    title = "FICHE DE PAIE"
+    flow = _header_flowables(
+        company, title,
+        "Mois : " + sheet.month.strftime("%m/%Y") + " · Édité le " + bamako_date(datetime.now(BAMAKO))
+        + (" · Clôturée" if sheet.status == "closed" else " · Brouillon"))
+
+    rows = [
+        ("Total net", fcfa(sum(s.net for s in slips))),
+        ("Nombre d'employés", str(len(slips))),
+    ]
+    flow.append(_section_table(st, "SYNTHÈSE", rows, total_last=True))
+    flow.append(Spacer(1, 10))
+
+    data = [["N°", "Employé", "Poste", "Site", "Base", "Primes", "Retenues", "Net"]]
+    for s in slips:
+        primes = sum(l.amount for l in s.lines.all() if l.kind != "deduction")
+        retenues = sum(l.amount for l in s.lines.all() if l.kind == "deduction")
+        data.append([
+            s.number or "—",
+            s.employee.name if s.employee_id else "—",
+            s.position or "—",
+            s.site_name or "—",
+            fcfa(s.base_amount),
+            fcfa(primes),
+            fcfa(retenues),
+            fcfa(s.net),
+        ])
+    if len(data) == 1:
+        flow.append(Paragraph("Aucune ligne.", st["small"]))
+    else:
+        t = Table(data, repeatRows=1, colWidths=[55, 95, 70, 60, 55, 50, 55, 55])
+        t.setStyle(TableStyle([
+            ("FONTNAME", (0, 0), (-1, 0), "Helvetica-Bold"),
+            ("FONTSIZE", (0, 0), (-1, -1), 7.5),
+            ("BACKGROUND", (0, 0), (-1, 0), HexColor(DARK)),
+            ("TEXTCOLOR", (0, 0), (-1, 0), colors.white),
+            ("ROWBACKGROUNDS", (0, 1), (-1, -1), [colors.white, HexColor(LIGHT)]),
+            ("LINEBELOW", (0, 0), (-1, 0), 1.5, HexColor(ACCENT)),
+            ("LINEBELOW", (0, 1), (-1, -1), 0.4, HexColor("#b5b0a6")),
+            ("ALIGN", (4, 0), (7, -1), "RIGHT"),
+            ("VALIGN", (0, 0), (-1, -1), "TOP"),
+            ("TOPPADDING", (0, 0), (-1, -1), 2),
+            ("BOTTOMPADDING", (0, 0), (-1, -1), 2),
+            ("LEFTPADDING", (0, 0), (-1, -1), 3),
+            ("RIGHTPADDING", (0, 0), (-1, -1), 3),
+            ("BOX", (0, 0), (-1, -1), 1.2, HexColor(DARK)),
+        ]))
+        flow.append(t)
+
+    filename = "fiche-paie-" + sheet.month.strftime("%Y-%m") + ".pdf"
+    return filename, _render(title, flow)

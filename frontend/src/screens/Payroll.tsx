@@ -7,7 +7,7 @@ import { useAuth } from '../lib/auth';
 import { useToast } from '../lib/toast';
 import {
   addPayslipLine, closeSheet, createSheet, deleteSheet,
-  fillTeam, generatePayslip, getSheet, listSheets, listUsers, mediaUrl,
+  downloadPdf, fillTeam, generatePayslip, getSheet, listSheets, listUsers, mediaUrl,
   payPayslip, removeStamp, setSlipBase, uploadStamp,
   type AdminUser, type PayrollSheet, type Payslip,
 } from '../lib/api';
@@ -369,7 +369,15 @@ export default function Payroll() {
                   </button>
                 </>
               )}
-              <button type="button" className="btn btn-ghost" onClick={() => window.print()}>
+              <button type="button" className="btn btn-ghost" onClick={async () => {
+                if (!sheet) return;
+                const y = new Date(sheet.month).getFullYear();
+                const m = new Date(sheet.month).getMonth() + 1;
+                try {
+                  await downloadPdf(`/payroll/sheet/pdf/?year=${y}&month=${m}`, `fiche-paie-${y}-${String(m).padStart(2, '0')}.pdf`);
+                  notify('success', 'PDF téléchargé', 'Fiche de paie prête.');
+                } catch (e) { notify('error', 'Téléchargement impossible', e instanceof Error ? e.message : ''); }
+              }}>
                 <Icon name="download" size={18} />Télécharger en PDF
               </button>
             </div>

@@ -2270,3 +2270,30 @@ class PayslipViewSet(mixins.ListModelMixin, mixins.RetrieveModelMixin, viewsets.
             return Response({"detail": str(e)}, status=400)
         slip = Payslip.objects.get(pk=pk)
         return Response(PayslipSerializer(slip).data)
+
+class PayrollSheetPdfView(APIView):
+    permission_classes = [PayrollReadRoles]
+
+    def get(self, request):
+        import io
+        from django.http import FileResponse
+        from common import pdf_docs
+        from payroll.models import PayrollSheet
+
+        today = timezone.localdate()
+        raw_y = request.query_params.get("year", today.year)
+        raw_m = request.query_params.get("month", today.month)
+        try:
+            year = int(raw_y); month = int(raw_m)
+        except (ValueError, TypeError):
+            sheet = PayrollSheet.objects.order_by("-month").first()
+            if sheet is None:
+                return Response({"detail": "Aucune fiche."}, status=404)
+            year, month = sheet.month.year, sheet.month.month
+        try:
+            sheet = PayrollSheet.objects.get(month=date(year, month, 1))
+        except PayrollSheet.DoesNotExist:
+            return Response({"detail": "Fiche introuvable."}, status=404)
+        filename, content = pdf_docs.pdf_payroll_sheet(sheet=sheet)
+        return FileResponse(io.BytesIO(content), as_attachment=True,
+                            filename=filename, content_type="application/pdf")
