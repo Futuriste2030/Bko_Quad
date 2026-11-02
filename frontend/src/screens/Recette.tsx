@@ -156,7 +156,7 @@ export default function Recette() {
               summary?.locked
                 ? <>
                     <span className="small muted no-print">Mois déjà clôturé</span>
-                    {(role === 'admin' || role === 'superadmin') && (
+                    {(role === 'admin' || role === 'superadmin' || role === 'comptable') && (
                       <button type="button" className="btn btn-ghost no-print" onClick={async () => {
                         const months = [...viewMonths].sort((a, b) => a - b);
                         const y = viewYear; const m = months[0] || (now.getMonth() + 1);

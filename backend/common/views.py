@@ -1304,7 +1304,7 @@ class MonthSummaryView(APIView):
                 out=Sum("amount", filter=Q(direction=CashbookEntry.OUT)),
             )
             opening = (prior["inn"] or 0) - (prior["out"] or 0)
-            locked = False
+            locked = closing is not None
         else:
             base = CashbookEntry.objects.all()
             prior = base.filter(date__lt=first).aggregate(
