@@ -967,6 +967,16 @@ export async function downloadPdf(url: string, filename: string): Promise<void> 
   document.body.appendChild(link); link.click(); link.remove();
 }
 
+export async function openMonth(year: number, month: number): Promise<{ month: string; locked: boolean }> {
+  const r = await req(`/finance/month/open/`, { method: 'POST', body: JSON.stringify({ year, month }) });
+  if (r.status === 401) { logout(); throw new Error('Session expirée, reconnectez-vous.'); }
+  if (!r.ok) {
+    const err = await r.json().catch(() => ({}));
+    throw new Error(err.detail ?? 'Réouverture impossible.');
+  }
+  return r.json();
+}
+
 export interface TrackedLine { id: number; label: string; number: string; site: number | null; site_name: string; active: boolean; collect_enabled: boolean; last_sync: string | null }
 
 export const listLines = (): Promise<TrackedLine[]> => list<TrackedLine>('/lines/');

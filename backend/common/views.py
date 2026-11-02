@@ -1581,6 +1581,48 @@ class CloseMonthView(APIView):
         })
 
 
+class OpenMonthView(APIView):
+    """Rouverture d'un mois clos de la caisse (admin/superadmin uniquement).
+
+    Supprime la clôture et déverrouille les écritures du mois pour permettre
+    des corrections, puis il faudra re-clôturer.
+    """
+    permission_classes = [IsAuthenticated]
+
+    def post(self, request):
+        if not (request.user.is_superuser
+                or getattr(request.user, "role", None) in ("admin", "comptable")):
+            return Response({"detail": "Non autorisé."}, status=403)
+        from finance.models import MonthlyClosing, CashbookEntry
+        from finance.services import month_bounds
+        from audit.services import log_action
+
+        data = request.data if isinstance(request.data, dict) else {}
+        raw_y = data.get("year", request.query_params.get("year"))
+        raw_m = data.get("month", request.query_params.get("month"))
+        today = timezone.localdate()
+        try:
+            year = int(raw_y if raw_y not in (None, "") else today.year)
+            month = int(raw_m if raw_m not in (None, "") else today.month)
+            if month < 1 or month > 12:
+                raise ValueError
+        except (ValueError, TypeError):
+            return Response({"detail": "Mois invalide."}, status=400)
+        first = month_bounds(date(year, month, 1))
+        closing = MonthlyClosing.objects.filter(month=first).first()
+        if closing is None:
+            return Response({"detail": "Mois non clôturé."}, status=400)
+        before = {"month": first.isoformat(), "opening": closing.opening,
+                  "closing": closing.closing}
+        with transaction.atomic():
+            MonthlyClosing.objects.filter(month=first).delete()
+            CashbookEntry.objects.filter(date__year=year, date__month=month).update(locked=False)
+        log_action(actor=request.user, action="finance.month.open",
+                   entity=f"monthly_closing:{year}-{month:02d}",
+                   before=before, after={"opened": True})
+        return Response({"month": first.isoformat(), "locked": False})
+
+
 class RecettePdfView(APIView):
     """Fiche de recette mensuelle (caisse) en PDF, filtrable par site."""
     permission_classes = [FinanceReadRoles]

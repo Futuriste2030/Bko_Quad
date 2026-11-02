@@ -4,7 +4,7 @@ import { CompanyFooter, CompanyHeader } from '../components/CompanyDoc';
 import SiteFilter from '../components/SiteFilter';
 import { EmptyState, Field, PageHeader, SkeletonList } from '../components/ui';
 import Icon from '../lib/icons';
-import { listBookings, listEntries, monthSummary, downloadPdf, closeMonth, type Booking, type Entry, type MonthSummary } from '../lib/api';
+import { listBookings, listEntries, monthSummary, downloadPdf, closeMonth, openMonth, type Booking, type Entry, type MonthSummary } from '../lib/api';
 import { fcfa } from '../lib/format';
 import { useToast } from '../lib/toast';
 import { nativePrint } from '../lib/notifpref';
@@ -154,7 +154,27 @@ export default function Recette() {
             <button type="button" className="btn btn-ghost no-print" onClick={downloadRecettePdf} disabled={busy}><Icon name="download" size={18} />Télécharger en PDF</button>
             {mayClose && (
               summary?.locked
-                ? <span className="small muted no-print">Mois déjà clôturé</span>
+                ? <>
+                    <span className="small muted no-print">Mois déjà clôturé</span>
+                    {(role === 'admin' || role === 'superadmin') && (
+                      <button type="button" className="btn btn-ghost no-print" onClick={async () => {
+                        const months = [...viewMonths].sort((a, b) => a - b);
+                        const y = viewYear; const m = months[0] || (now.getMonth() + 1);
+                        if (viewMonths.size !== 1) { notify('warning', 'Réouverture', 'Sélectionnez un seul mois.'); return; }
+                        if (!window.confirm(`Rouvrir le mois ${y}-${String(m).padStart(2, '0')} ? Les écritures seront déverrouillées.`)) return;
+                        setBusyClose(true);
+                        try {
+                          await openMonth(y, m);
+                          const s = await monthSummary(y, m).catch(() => null);
+                          if (s) setSummary(s);
+                          notify('success', 'Mois rouvert', 'Vous pouvez maintenant corriger les écritures.');
+                        } catch (e) { notify('error', 'Réouverture impossible', e instanceof Error ? e.message : ''); }
+                        finally { setBusyClose(false); }
+                      }} disabled={busyClose}>
+                        <Icon name="refresh" size={18} />Rouvrir le mois
+                      </button>
+                    )}
+                  </>
                 : (
                   <button type="button" className="btn btn-accent no-print" onClick={handleCloseMonth} disabled={busyClose}>
                     <Icon name="close" size={18} />Clôturer le mois
