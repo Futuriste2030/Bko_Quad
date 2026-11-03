@@ -17,6 +17,7 @@ import Bank from './screens/Bank';
 import Clients from './screens/Clients';
 import Communication from './screens/Communication';
 import Expenses from './screens/Expenses';
+import Impots from './screens/Impots';
 import Fleet from './screens/Fleet';
 import MaintenanceList from './screens/Maintenance';
 import Payroll from './screens/Payroll';
@@ -139,6 +140,7 @@ function ScreenRoutes() {
       <Route path="caisse" element={<Guard roles={['responsable', 'admin', 'comptable']}><Cash /></Guard>} />
       <Route path="banque" element={<Guard roles={['responsable', 'admin', 'comptable']}><Bank /></Guard>} />
       <Route path="depenses" element={<Guard roles={['responsable', 'admin']}><Expenses /></Guard>} />
+      <Route path="impots" element={<Guard roles={['responsable', 'admin', 'comptable']}><Impots /></Guard>} />
       <Route path="communication" element={<Guard><Communication /></Guard>} />
       <Route path="recette" element={<Guard roles={['responsable', 'admin', 'comptable']}><Recette /></Guard>} />
       <Route path="exports" element={<Guard roles={['agent', 'responsable', 'admin', 'comptable']}><Exports /></Guard>} />

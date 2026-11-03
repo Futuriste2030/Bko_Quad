@@ -24,6 +24,7 @@ class CashbookEntry(models.Model):
         ("salaire", "Salaire"),
         ("avance", "Avance au personnel"),
         ("loyer", "Loyer"),
+        ("impot", "Impôt"),
         ("autre", "Autre"),
     ]
 

@@ -39,6 +39,12 @@ export const NAV_SECTIONS: NavSection[] = [
     ],
   },
   {
+    title: 'Impôts',
+    items: [
+      { to: '/impots', label: 'Impôts', icon: 'file', roles: ['responsable', 'admin', 'comptable'] },
+    ],
+  },
+  {
     title: 'Caisse & Finance',
     items: [
       { to: '/cloture', label: 'Clôture du jour', icon: 'close', roles: ['agent', 'responsable', 'admin', 'comptable'] },

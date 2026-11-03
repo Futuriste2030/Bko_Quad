@@ -1196,7 +1196,7 @@ class ExpenseView(APIView):
             year, month, day_n = (int(x) for x in str(day).split("-"))
             category = request.data["category"]
             label = str(request.data.get("label", "")).strip()
-            if category not in ("carburant", "reparation", "loyer", "autre",
+            if category not in ("carburant", "reparation", "loyer", "impot", "autre",
                                 "recette_manuelle"):
                 return Response({"detail": "Catégorie invalide (recettes réservations automatiques)."}, status=400)
             if not label:
