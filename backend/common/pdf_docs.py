@@ -935,11 +935,23 @@ def pdf_payroll_sheet(*, sheet):
     for s in slips:
         primes = sum(l.amount for l in s.lines.all() if l.kind != "deduction")
         retenues = sum(l.amount for l in s.lines.all() if l.kind == "deduction")
+        emp_name = s.employee.name if s.employee_id else "—"
+        position = s.position or "—"
+        site_name = s.site_name or "—"
+        if getattr(s, "user_id", None) and s.user is not None and getattr(s, "sheet", None) is not None and s.sheet.status == "draft":
+            u = s.user
+            name = (u.first_name + " " + u.last_name).strip()
+            if name:
+                emp_name = name
+            if u.role:
+                position = u.role
+            if u.site_id:
+                site_name = u.site.name
         data.append([
             s.number or "—",
-            s.employee.name if s.employee_id else "—",
-            s.position or "—",
-            s.site_name or "—",
+            emp_name,
+            position,
+            site_name,
             fcfa(s.base_amount),
             fcfa(primes),
             fcfa(retenues),
@@ -980,6 +992,17 @@ def pdf_payslip(*, slip):
     st = _styles()
     title = "BULLETIN DE PAIE"
     emp_name = slip.employee.name if slip.employee_id else "—"
+    position = slip.position or "—"
+    site_name = slip.site_name or "—"
+    if getattr(slip, "user_id", None) and slip.user is not None and slip.sheet is not None and slip.sheet.status == "draft":
+        u = slip.user
+        name = (u.first_name + " " + u.last_name).strip()
+        if name:
+            emp_name = name
+        if u.role:
+            position = u.role
+        if u.site_id:
+            site_name = u.site.name
     flow = _header_flowables(
         company, title,
         "Mois : " + slip.sheet.month.strftime("%m/%Y") + " · Bulletin individuel"
@@ -988,8 +1011,8 @@ def pdf_payslip(*, slip):
     rows = [
         ("N°", slip.number or "—"),
         ("Employé", emp_name),
-        ("Poste", slip.position or "—"),
-        ("Site", slip.site_name or "—"),
+        ("Poste", position),
+        ("Site", site_name),
         ("Base", fcfa(slip.base_amount)),
     ]
     primes = [l for l in slip.lines.all() if l.kind != "deduction"]
