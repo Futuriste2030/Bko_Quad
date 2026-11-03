@@ -4,7 +4,7 @@ import SiteFilter from '../components/SiteFilter';
 import { EmptyState, Field, PageHeader, SkeletonList } from '../components/ui';
 import Icon from '../lib/icons';
 import { useToast } from '../lib/toast';
-import { activeSiteId, createExpense, listEntries, listSites, todayISO, updateEntry, type Entry, type Site } from '../lib/api';
+import { activeSiteId, createExpense, deleteEntry, listEntries, listSites, todayISO, updateEntry, type Entry, type Site } from '../lib/api';
 import { fcfa } from '../lib/format';
 
 const TYPES = [
@@ -28,6 +28,12 @@ export default function Impots() {
     const id = activeSiteId();
     return id ? String(id) : '';
   });
+  const [editItem, setEditItem] = useState<Entry | null>(null);
+  const [editBusy, setEditBusy] = useState(false);
+  const [eLabel, setELabel] = useState('');
+  const [eAmount, setEAmount] = useState('');
+  const [eMonth, setEMonth] = useState('');
+  const [eSite, setESite] = useState('');
 
   function load() {
     setLoading(true); setError('');
@@ -76,6 +82,41 @@ export default function Impots() {
     finally { setBusy(false); }
   }
 
+  function openEdit(e: Entry) {
+    setEditItem(e);
+    setELabel(e.label);
+    setEAmount(String(e.amount));
+    setEMonth(e.date.slice(0, 7));
+    setESite(e.site ? String(e.site) : '');
+  }
+  async function submitEdit() {
+    if (!editItem) return;
+    const n = Number(eAmount);
+    if (!eLabel.trim()) { notify('warning', 'Libellé requis', 'Décrivez l\'impôt.'); return; }
+    if (!n || n < 1) { notify('warning', 'Montant invalide', 'Saisissez le montant en FCFA.'); return; }
+    setEditBusy(true);
+    try {
+      await updateEntry(editItem.id, {
+        date: `${eMonth}-01`,
+        label: eLabel.trim(),
+        amount: Math.round(n),
+        site: eSite ? Number(eSite) : null,
+      });
+      notify('success', 'Impôt modifié', `${editItem.voucher}.`);
+      setEditItem(null);
+      load();
+    } catch (e) { notify('error', 'Modification impossible', e instanceof Error ? e.message : ''); }
+    finally { setEditBusy(false); }
+  }
+  async function handleDelete(e: Entry) {
+    if (!window.confirm(`Supprimer l'impôt ${e.voucher} (${fcfa(e.amount)}) ?`)) return;
+    try {
+      await deleteEntry(e.id);
+      notify('success', 'Impôt supprimé', `${e.voucher}.`);
+      load();
+    } catch (err) { notify('error', 'Suppression impossible', err instanceof Error ? err.message : ''); }
+  }
+
   return (
     <AppShell>
       <PageHeader
@@ -110,9 +151,47 @@ export default function Impots() {
                 {e.receipt && <span className="num">{e.receipt}</span>}
                 {e.site_name && <span>{e.site_name}</span>}
               </div>
-              <div className="row-top"><strong className="num">{fcfa(e.amount)}</strong></div>
+              <div className="row-top">
+                <strong className="num">{fcfa(e.amount)}</strong>
+                {!e.locked && (
+                  <>
+                    <button type="button" className="btn btn-ghost btn-sm" onClick={() => openEdit(e)}>Modifier</button>
+                    <button type="button" className="btn btn-ghost btn-sm" onClick={() => handleDelete(e)}>Supprimer</button>
+                  </>
+                )}
+              </div>
             </article>
           ))}
+        </div>
+      )}
+      {editItem && (
+        <div className="modal-backdrop" onClick={() => !editBusy && setEditItem(null)}>
+          <div className="modal form" role="dialog" aria-modal="true" aria-label="Modifier l'impôt" onClick={(e) => e.stopPropagation()}>
+            <h2>Modifier {editItem.voucher}</h2>
+            <div className="form-2">
+              <Field label="Mois" required htmlFor="ei-month">
+                <input id="ei-month" type="month" value={eMonth} onChange={(e) => e.target.value && setEMonth(e.target.value)} />
+              </Field>
+              <Field label="Montant (FCFA)" required htmlFor="ei-amount">
+                <input id="ei-amount" inputMode="numeric" value={eAmount} onChange={(e) => setEAmount(e.target.value)} />
+              </Field>
+            </div>
+            <Field label="Libellé" required htmlFor="ei-label">
+              <input id="ei-label" value={eLabel} onChange={(e) => setELabel(e.target.value)} />
+            </Field>
+            <Field label="Site (optionnel)" htmlFor="ei-site">
+              <select id="ei-site" value={eSite} onChange={(e) => setESite(e.target.value)}>
+                <option value="">—</option>
+                {sites.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
+              </select>
+            </Field>
+            <div className="modal-actions">
+              <button type="button" className="btn btn-ghost" onClick={() => setEditItem(null)} disabled={editBusy}>Revenir</button>
+              <button type="button" className="btn btn-primary" onClick={submitEdit} disabled={editBusy}>
+                {editBusy && <span className="caret" aria-hidden="true" />}Enregistrer
+              </button>
+            </div>
+          </div>
         </div>
       )}
       {open && (
