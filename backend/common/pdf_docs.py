@@ -969,3 +969,70 @@ def pdf_payroll_sheet(*, sheet):
 
     filename = "fiche-paie-" + sheet.month.strftime("%Y-%m") + ".pdf"
     return filename, _render(title, flow)
+
+def pdf_payslip(*, slip):
+    from reportlab.platypus import Paragraph, Spacer, Table, TableStyle
+    from reportlab.lib import colors
+    from reportlab.lib.colors import HexColor
+    from common.models import CompanyProfile
+
+    company, _ = CompanyProfile.objects.get_or_create(pk=1)
+    st = _styles()
+    title = "BULLETIN DE PAIE"
+    emp_name = slip.employee.name if slip.employee_id else "—"
+    flow = _header_flowables(
+        company, title,
+        "Mois : " + slip.sheet.month.strftime("%m/%Y") + " · Bulletin individuel"
+        + " · Édité le " + bamako_date(datetime.now(BAMAKO)))
+
+    rows = [
+        ("N°", slip.number or "—"),
+        ("Employé", emp_name),
+        ("Poste", slip.position or "—"),
+        ("Site", slip.site_name or "—"),
+        ("Base", fcfa(slip.base_amount)),
+    ]
+    primes = [l for l in slip.lines.all() if l.kind != "deduction"]
+    retenues = [l for l in slip.lines.all() if l.kind == "deduction"]
+    if primes:
+        rows.append(("Primes", fcfa(sum(l.amount for l in primes))))
+    if retenues:
+        rows.append(("Retenues", fcfa(sum(l.amount for l in retenues))))
+    rows.append(("Net à payer", fcfa(slip.net)))
+    paid = sum(p.amount for p in slip.payments.all())
+    rows.append(("Versé", fcfa(paid)))
+    rows.append(("Statut", "Payé" if paid >= slip.net and slip.net > 0 else "En attente"))
+    flow.append(_section_table(st, "BULLETIN", rows, total_last=True))
+    flow.append(Spacer(1, 10))
+
+    if slip.lines.all().exists():
+        data = [["Libellé", "Type", "Montant"]]
+        for l in slip.lines.all():
+            data.append([l.label, "Prime" if l.kind != "deduction" else "Retenue", fcfa(l.amount)])
+        t = Table(data, repeatRows=1, colWidths=[260, 90, 90])
+        t.setStyle(TableStyle([
+            ("FONTNAME", (0, 0), (-1, 0), "Helvetica-Bold"),
+            ("FONTSIZE", (0, 0), (-1, -1), 9),
+            ("BACKGROUND", (0, 0), (-1, 0), HexColor(DARK)),
+            ("TEXTCOLOR", (0, 0), (-1, 0), colors.white),
+            ("ROWBACKGROUNDS", (0, 1), (-1, -1), [colors.white, HexColor(LIGHT)]),
+            ("LINEBELOW", (0, 0), (-1, 0), 1.5, HexColor(ACCENT)),
+            ("LINEBELOW", (0, 1), (-1, -1), 0.4, HexColor("#b5b0a6")),
+            ("ALIGN", (2, 0), (2, -1), "RIGHT"),
+            ("VALIGN", (0, 0), (-1, -1), "TOP"),
+            ("TOPPADDING", (0, 0), (-1, -1), 3),
+            ("BOTTOMPADDING", (0, 0), (-1, -1), 3),
+            ("LEFTPADDING", (0, 0), (-1, -1), 4),
+            ("RIGHTPADDING", (0, 0), (-1, -1), 4),
+            ("BOX", (0, 0), (-1, -1), 1.2, HexColor(DARK)),
+        ]))
+        flow.append(t)
+        flow.append(Spacer(1, 8))
+
+    from common.models import CompanyProfile
+    company.refresh_from_db()
+    flow.append(Paragraph("Document généré automatiquement — bulletin de paie individuel.", st["small"]))
+
+    name_slug = (slip.employee.name if slip.employee_id else "employe").replace(" ", "-")
+    filename = "bulletin-paie-" + slip.sheet.month.strftime("%Y-%m") + "-" + name_slug + ".pdf"
+    return filename, _render(title, flow)

@@ -424,6 +424,16 @@ export default function Payroll() {
                           )}
                         </td>
                         <td className="num small">{fmtDate(s.paid_at)}</td>
+                        <td className="no-print">
+                          <button type="button" className="btn btn-sm btn-ghost" onClick={async () => {
+                            try {
+                              await downloadPdf(`/payroll/slip/${s.id}/pdf/`, `bulletin-paie-${s.id}.pdf`);
+                              notify('success', 'PDF téléchargé', 'Bulletin prêt.');
+                            } catch (e) { notify('error', 'Téléchargement impossible', e instanceof Error ? e.message : ''); }
+                          }}>
+                            <Icon name="download" size={14} />PDF
+                          </button>
+                        </td>
                       </tr>
                       {openRows[s.id] && (
                         <tr key={`${s.id}-detail`}>

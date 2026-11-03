@@ -2297,3 +2297,20 @@ class PayrollSheetPdfView(APIView):
         filename, content = pdf_docs.pdf_payroll_sheet(sheet=sheet)
         return FileResponse(io.BytesIO(content), as_attachment=True,
                             filename=filename, content_type="application/pdf")
+
+class PayslipPdfView(APIView):
+    permission_classes = [PayrollReadRoles]
+
+    def get(self, request, pk):
+        import io
+        from django.http import FileResponse
+        from common import pdf_docs
+        from payroll.models import Payslip
+
+        try:
+            slip = Payslip.objects.select_related("employee", "sheet").get(pk=pk)
+        except Payslip.DoesNotExist:
+            return Response({"detail": "Bulletin introuvable."}, status=404)
+        filename, content = pdf_docs.pdf_payslip(slip=slip)
+        return FileResponse(io.BytesIO(content), as_attachment=True,
+                            filename=filename, content_type="application/pdf")
