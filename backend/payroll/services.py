@@ -47,8 +47,17 @@ def _employee_for_user(user):
     from payroll.models import Employee
 
     name = f"{user.first_name} {user.last_name}".strip() or user.username
-    employee, _ = Employee.objects.get_or_create(
+    employee, created = Employee.objects.get_or_create(
         name=name, defaults={"role": user.role, "site": user.site})
+    if not created:
+        # Mise à jour si le compte a changé (rôle, site).
+        changed = False
+        if employee.role != user.role:
+            employee.role = user.role; changed = True
+        if employee.site_id != (user.site_id if user.site_id else None):
+            employee.site = user.site; changed = True
+        if changed:
+            employee.save(update_fields=["role", "site"])
     return employee, name
 
 

@@ -883,6 +883,8 @@ class PayslipSerializer(serializers.ModelSerializer):
     lines = PayslipLineSerializer(many=True, read_only=True)
     payments = PayslipPaymentSerializer(many=True, read_only=True)
     employee_name = serializers.SerializerMethodField()
+    position = serializers.SerializerMethodField()
+    site_name = serializers.SerializerMethodField()
     paid = serializers.SerializerMethodField()
     month = serializers.SerializerMethodField()
     status = serializers.SerializerMethodField()
@@ -895,7 +897,22 @@ class PayslipSerializer(serializers.ModelSerializer):
                   "status", "paid_at", "lines", "payments"]
 
     def get_employee_name(self, o):
+        if getattr(o, "user_id", None) and o.user is not None:
+            u = o.user
+            name = (u.first_name + " " + u.last_name).strip()
+            if name:
+                return name
         return o.employee.name if o.employee_id else ""
+
+    def get_position(self, o):
+        if getattr(o, "user_id", None) and o.user is not None and o.sheet is not None and o.sheet.status == "draft":
+            return o.user.role or o.position
+        return o.position
+
+    def get_site_name(self, o):
+        if getattr(o, "user_id", None) and o.user is not None and o.sheet is not None and o.sheet.status == "draft" and o.user.site_id:
+            return o.user.site.name
+        return o.site_name
 
     def get_month(self, o):
         return o.sheet.month.isoformat() if o.sheet_id else ""
