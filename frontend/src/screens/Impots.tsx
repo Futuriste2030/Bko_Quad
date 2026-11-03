@@ -4,7 +4,7 @@ import SiteFilter from '../components/SiteFilter';
 import { EmptyState, Field, PageHeader, SkeletonList } from '../components/ui';
 import Icon from '../lib/icons';
 import { useToast } from '../lib/toast';
-import { activeSiteId, createExpense, listEntries, listSites, todayISO, type Entry, type Site } from '../lib/api';
+import { activeSiteId, createExpense, listEntries, listSites, todayISO, updateEntry, type Entry, type Site } from '../lib/api';
 import { fcfa } from '../lib/format';
 
 const TYPES = [
@@ -61,7 +61,15 @@ export default function Impots() {
         label: label.trim(), amount: Math.round(n),
         site: site ? Number(site) : undefined,
       });
-      notify('success', 'Impôt enregistré', `Bordereau ${e.voucher} — ${fcfa(e.amount)}.`);
+      // Référence automatique : DM-mois-annee-id-site / PCA-annee-id-site
+      const m = month.split('-')[1];
+      const y = month.split('-')[0];
+      const sitePart = site ? site : (e.site ? String(e.site) : '0');
+      const ref = type === 'declaration'
+        ? `DM-${m}-${y}-${e.id}-${sitePart}`
+        : `PCA-${y}-${e.id}-${sitePart}`;
+      try { await updateEntry(e.id, { receipt: ref }); } catch { /* ignore */ }
+      notify('success', 'Impôt enregistré', `Bordereau ${e.voucher} — ${ref} — ${fcfa(e.amount)}.`);
       setOpen(false); setLabel(''); setAmount('');
       load();
     } catch (e) { notify('error', 'Enregistrement impossible', e instanceof Error ? e.message : ''); }
@@ -99,6 +107,7 @@ export default function Impots() {
               <div>{e.label}</div>
               <div className="row-meta">
                 <span className="num">{new Date(e.date).toLocaleDateString('fr-FR')}</span>
+                {e.receipt && <span className="num">{e.receipt}</span>}
                 {e.site_name && <span>{e.site_name}</span>}
               </div>
               <div className="row-top"><strong className="num">{fcfa(e.amount)}</strong></div>
